@@ -1,7 +1,33 @@
-# TanStack Start + Clerk + Convex
+# Gavel
 
-Follow https://docs.convex.dev/auth/clerk until you have
-`CLERK_PUBLISHABLE_KEY`, `CLERK_SECRET_KEY`, and `CLERK_FRONTEND_API_URL` in
-the .env file.
+Gavel is an agent for selling your stuff hands-off. It helps turn a loose pile of items into managed marketplace listings: prepare listings, browse buyer demand, compare prices, draft replies, coordinate next steps, and keep the seller in control for sensitive actions.
 
-Then run `npx convex dev`.
+The app is built with TanStack Start, Convex, Clerk, and Vite+.
+
+## Development
+
+Install dependencies:
+
+```bash
+vp install
+```
+
+Set up a Convex dev deployment:
+
+```bash
+npx convex dev
+```
+
+For normal local development, run the app and Convex together:
+
+```bash
+vp run dev
+```
+
+Useful checks:
+
+```bash
+vp check
+vp test
+vp build
+```

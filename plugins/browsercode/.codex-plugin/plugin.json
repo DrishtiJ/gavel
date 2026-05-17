@@ -1,5 +1,5 @@
 {
-  "name": "browsercode-cdp",
+  "name": "browsercode",
   "version": "0.1.0",
   "description": "A streamlined coding agent that drives real browsers through unconstrained CDP.",
   "author": {
@@ -12,7 +12,7 @@
   "skills": "./skills/",
   "mcpServers": "./.mcp.json",
   "interface": {
-    "displayName": "BrowserCode CDP",
+    "displayName": "BrowserCode",
     "shortDescription": "Drives real browsers through unconstrained CDP",
     "longDescription": "The unbounded power of the browser working seamlessly with your code. The agent adapts to every site at runtime and writes scripts to reuse later.\n\nBrowserCode adds one core browser primitive:\n\nbrowser_execute(code)\n  -> runs JavaScript in-process\n  -> talks to Chrome through the DevTools Protocol\n  -> keeps the browser session alive across calls\n  -> returns logs, values, and screenshots to the agent",
     "developerName": "Thomas Kiefer",

@@ -16,8 +16,8 @@ const preview = (text: string) =>
     : '...\n\n' + text.slice(-MAX_METADATA_LENGTH)
 
 const dataDir =
-  process.env.BROWSERCODE_CDP_DATA_DIR ??
-  path.join(os.homedir(), '.cache', 'codex-browsercode-cdp', 'data')
+  process.env.BROWSERCODE_DATA_DIR ??
+  path.join(os.homedir(), '.cache', 'codex-browsercode', 'data')
 
 const service = await Effect.runPromise(BrowserExecute.make(dataDir))
 const descriptionPath = path.join(
@@ -32,7 +32,7 @@ const toolDescription = (await fs.readFile(descriptionPath, 'utf8')).replaceAll(
 )
 
 const server = new McpServer({
-  name: 'browsercode-cdp',
+  name: 'browsercode',
   version: '0.1.0',
 })
 

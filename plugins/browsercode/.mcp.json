@@ -1,7 +1,7 @@
 {
   "mcpServers": {
-    "browsercode-cdp": {
-      "command": "./mcp/browsercode-cdp/run-mcp.sh",
+    "browsercode": {
+      "command": "./mcp/browsercode/run-mcp.sh",
       "args": [],
       "cwd": ".",
       "env_vars": [
