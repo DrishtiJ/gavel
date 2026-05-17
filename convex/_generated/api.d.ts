@@ -8,8 +8,8 @@
  * @module
  */
 
+import type * as agentRuntime from "../agentRuntime.js";
 import type * as posts from "../posts.js";
-import type * as user from "../user.js";
 
 import type {
   ApiFromModules,
@@ -18,8 +18,8 @@ import type {
 } from "convex/server";
 
 declare const fullApi: ApiFromModules<{
+  agentRuntime: typeof agentRuntime;
   posts: typeof posts;
-  user: typeof user;
 }>;
 
 /**

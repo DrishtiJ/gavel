@@ -1,0 +1,9 @@
+[mcp_servers.browsercode]
+command = "/opt/gavel/plugins/browsercode/mcp/browsercode/run-mcp.sh"
+args = []
+env_vars = [
+  "BROWSER_USE_API_KEY",
+  "BROWSER_USE_PROFILE_ID",
+  "BU_CDP_WS",
+  "BU_CDP_URL",
+]

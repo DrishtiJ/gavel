@@ -13,7 +13,7 @@
   },
   "dependencies": {
     "@base-ui/react": "^1.4.1",
-    "@clerk/tanstack-react-start": "^0.29.11",
+    "@blaxel/core": "0.2.84",
     "@convex-dev/react-query": "0.1.0",
     "@fontsource-variable/jetbrains-mono": "^5.2.8",
     "@phosphor-icons/react": "^2.1.10",

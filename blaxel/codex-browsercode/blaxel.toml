@@ -1,0 +1,11 @@
+name = "gavel-codex-browsercode"
+type = "sandbox"
+
+[runtime]
+memory = 8192
+generation = "mk3"
+
+[[runtime.ports]]
+name = "sandbox-api"
+target = 8080
+protocol = "HTTP"

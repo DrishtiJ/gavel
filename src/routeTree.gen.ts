@@ -10,17 +10,12 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as PostsRouteImport } from './routes/posts'
-import { Route as AuthedRouteImport } from './routes/_authed'
 import { Route as IndexRouteImport } from './routes/index'
-import { Route as AuthedUserRouteImport } from './routes/_authed/user'
+import { Route as ApiAgentphoneWebhookRouteImport } from './routes/api/agentphone/webhook'
 
 const PostsRoute = PostsRouteImport.update({
   id: '/posts',
   path: '/posts',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const AuthedRoute = AuthedRouteImport.update({
-  id: '/_authed',
   getParentRoute: () => rootRouteImport,
 } as any)
 const IndexRoute = IndexRouteImport.update({
@@ -28,41 +23,40 @@ const IndexRoute = IndexRouteImport.update({
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
-const AuthedUserRoute = AuthedUserRouteImport.update({
-  id: '/user',
-  path: '/user',
-  getParentRoute: () => AuthedRoute,
+const ApiAgentphoneWebhookRoute = ApiAgentphoneWebhookRouteImport.update({
+  id: '/api/agentphone/webhook',
+  path: '/api/agentphone/webhook',
+  getParentRoute: () => rootRouteImport,
 } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/posts': typeof PostsRoute
-  '/user': typeof AuthedUserRoute
+  '/api/agentphone/webhook': typeof ApiAgentphoneWebhookRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/posts': typeof PostsRoute
-  '/user': typeof AuthedUserRoute
+  '/api/agentphone/webhook': typeof ApiAgentphoneWebhookRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
-  '/_authed': typeof AuthedRouteWithChildren
   '/posts': typeof PostsRoute
-  '/_authed/user': typeof AuthedUserRoute
+  '/api/agentphone/webhook': typeof ApiAgentphoneWebhookRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/posts' | '/user'
+  fullPaths: '/' | '/posts' | '/api/agentphone/webhook'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/posts' | '/user'
-  id: '__root__' | '/' | '/_authed' | '/posts' | '/_authed/user'
+  to: '/' | '/posts' | '/api/agentphone/webhook'
+  id: '__root__' | '/' | '/posts' | '/api/agentphone/webhook'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
-  AuthedRoute: typeof AuthedRouteWithChildren
   PostsRoute: typeof PostsRoute
+  ApiAgentphoneWebhookRoute: typeof ApiAgentphoneWebhookRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -74,13 +68,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof PostsRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/_authed': {
-      id: '/_authed'
-      path: ''
-      fullPath: '/'
-      preLoaderRoute: typeof AuthedRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/': {
       id: '/'
       path: '/'
@@ -88,31 +75,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/_authed/user': {
-      id: '/_authed/user'
-      path: '/user'
-      fullPath: '/user'
-      preLoaderRoute: typeof AuthedUserRouteImport
-      parentRoute: typeof AuthedRoute
+    '/api/agentphone/webhook': {
+      id: '/api/agentphone/webhook'
+      path: '/api/agentphone/webhook'
+      fullPath: '/api/agentphone/webhook'
+      preLoaderRoute: typeof ApiAgentphoneWebhookRouteImport
+      parentRoute: typeof rootRouteImport
     }
   }
 }
 
-interface AuthedRouteChildren {
-  AuthedUserRoute: typeof AuthedUserRoute
-}
-
-const AuthedRouteChildren: AuthedRouteChildren = {
-  AuthedUserRoute: AuthedUserRoute,
-}
-
-const AuthedRouteWithChildren =
-  AuthedRoute._addFileChildren(AuthedRouteChildren)
-
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
-  AuthedRoute: AuthedRouteWithChildren,
   PostsRoute: PostsRoute,
+  ApiAgentphoneWebhookRoute: ApiAgentphoneWebhookRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
