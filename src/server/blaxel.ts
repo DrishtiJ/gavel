@@ -48,15 +48,6 @@ export async function startRemoteCodexRun(
       app: 'gavel',
       runtime: 'codex-browsercode',
     },
-    lifecycle: {
-      expirationPolicies: [
-        {
-          type: 'ttl-idle',
-          value: process.env.BLAXEL_SANDBOX_IDLE_TTL ?? '24h',
-          action: 'delete',
-        },
-      ],
-    },
   })
 
   await sandbox.wait({ maxWait: 120_000, interval: 2_000 })
@@ -70,7 +61,7 @@ export async function startRemoteCodexRun(
     '--json',
     '--cd /workspace/gavel-agent',
     '--sandbox danger-full-access',
-    '--ask-for-approval never',
+    '--dangerously-bypass-approvals-and-sandbox',
     `- < ${shellQuote(promptPath)}`,
   ].join(' ')
 

@@ -16,13 +16,27 @@ function Home() {
   return (
     <main className="relative min-h-svh overflow-hidden bg-black font-sans text-white">
       <img
-        src="/gavel-hero-realistic.png"
+        src="/gavel-desk-bg.png"
         alt=""
         aria-hidden="true"
-        className="absolute inset-0 h-full w-full origin-center translate-x-[3%] translate-y-[3%] scale-[0.93] object-contain object-center"
+        className="absolute inset-0 h-full w-full object-cover object-center"
       />
-      <div className="absolute inset-0 bg-[linear-gradient(90deg,rgba(0,0,0,0.26)_0%,rgba(0,0,0,0.1)_42%,rgba(0,0,0,0)_100%)]" />
-      <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(0,0,0,0.2)_0%,rgba(0,0,0,0)_22%,rgba(0,0,0,0.16)_100%)]" />
+      <div className="absolute inset-0 bg-[linear-gradient(90deg,rgba(0,0,0,0.22)_0%,rgba(0,0,0,0.12)_44%,rgba(0,0,0,0.5)_100%)]" />
+      <div className="absolute right-[8.5vw] bottom-[1.5vh] hidden h-[14vh] w-[28vw] rounded-full bg-black/80 blur-2xl md:block" />
+      <div className="absolute right-[13vw] top-[16vh] hidden h-[58vh] w-[26vw] rounded-full bg-white/7 blur-3xl md:block" />
+      <img
+        src="/gavel-phone-angled.png"
+        alt=""
+        aria-hidden="true"
+        className="absolute right-[8.5vw] bottom-[-5vh] hidden h-[91vh] max-h-[980px] min-h-[720px] w-auto drop-shadow-[0_38px_84px_rgba(0,0,0,0.8)] md:block xl:right-[11vw] xl:h-[92vh]"
+      />
+      <img
+        src="/gavel-phone-angled.png"
+        alt=""
+        aria-hidden="true"
+        className="absolute right-[-24vw] bottom-[-10vh] h-[62vh] w-auto drop-shadow-[0_28px_64px_rgba(0,0,0,0.74)] md:hidden"
+      />
+      <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(0,0,0,0.18)_0%,rgba(0,0,0,0)_22%,rgba(0,0,0,0.12)_100%)]" />
 
       <section className="relative z-10 grid min-h-svh grid-rows-[auto_1fr]">
         <Header />
