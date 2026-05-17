@@ -1,6 +1,6 @@
 # Gavel
 
-Gavel is an agent for selling your stuff hands-off. It helps turn a loose pile of items into managed marketplace listings: prepare listings, browse buyer demand, compare prices, draft replies, coordinate next steps, and keep the seller in control for sensitive actions.
+Gavel helps you sell stuff by messaging an agent. Tell it what you want to sell, and it handles the work: creates the Craigslist post, manages buyer demand, drafts replies, compares offers, and coordinates the next steps. When it is ready to act, it messages you once for final confirmation, then finishes the sale flow.
 
 The app is built with TanStack Start, Convex, Clerk, and Vite+.
 
