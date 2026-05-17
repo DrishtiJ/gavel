@@ -1,0 +1,37 @@
+[
+  {
+    "id": "p_001",
+    "title": "IKEA Markus office chair",
+    "description": "Black mesh ergonomic office chair, used about 2 years, no rips or stains, fully adjustable. Pickup only.",
+    "askingPrice": 120,
+    "currency": "USD"
+  },
+  {
+    "id": "p_002",
+    "title": "iPhone 14 Pro 256GB",
+    "description": "Space black, unlocked, battery health 91 percent, comes with original box and cable. Small scratch on the back.",
+    "askingPrice": 580,
+    "currency": "USD"
+  },
+  {
+    "id": "p_003",
+    "title": "Yamaha FG800 acoustic guitar",
+    "description": "Solid spruce top, includes soft case and capo. Light pick wear on the soundhole, plays beautifully.",
+    "askingPrice": 180,
+    "currency": "USD"
+  },
+  {
+    "id": "p_004",
+    "title": "Vintage tan leather sofa",
+    "description": "Three-seater, real leather, mid-century style. Some patina on the arms, structurally solid.",
+    "askingPrice": 400,
+    "currency": "USD"
+  },
+  {
+    "id": "p_005",
+    "title": "Trek Marlin 5 mountain bike",
+    "description": "Medium frame, 29 inch wheels, new tires last spring. Hydraulic disc brakes recently serviced.",
+    "askingPrice": 350,
+    "currency": "USD"
+  }
+]
