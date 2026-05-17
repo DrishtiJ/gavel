@@ -152,12 +152,14 @@ environment for that run.
 - Remote `codex exec` launch inside the user sandbox.
 - Convex run/sandbox status updates for queued, starting, running, and failed
   states.
+- Per-phone-user active run locking with `phoneUsers.activeRunId`, so concurrent
+  webhooks cannot start multiple Codex processes in the same sandbox.
 
 ### Important Gaps For Contributors
 
-- There is no per-user queue lock yet. Two messages arriving close together can
-  start two Codex processes in the same sandbox. Add serialization before relying
-  on this for real users.
+- Queued follow-up runs do not drain automatically after the active run finishes.
+  The app still needs a completion path that clears `activeRunId` and claims the
+  next queued run.
 - The webhook route currently lives in TanStack Start at
   `/api/agentphone/webhook`. It calls Convex with `ConvexHttpClient`; it is not
   yet implemented as a native `convex/http.ts` HTTP action.

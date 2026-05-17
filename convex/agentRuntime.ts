@@ -11,6 +11,8 @@ const messageChannel = v.union(
 
 const now = () => Date.now()
 
+const activeRunStatuses = new Set(['queued', 'starting', 'running'])
+
 const nextEventSequence = async (ctx: MutationCtx, runId: Id<'agentRuns'>) => {
   const latest = await ctx.db
     .query('agentRunEvents')
@@ -82,6 +84,18 @@ export const enqueueAgentPhoneMessage = mutation({
       .withIndex('by_phoneUserId', (q) => q.eq('phoneUserId', phoneUser._id))
       .first()
 
+    let activeRunId = phoneUser.activeRunId
+    if (activeRunId) {
+      const activeRun = await ctx.db.get(activeRunId)
+      if (!activeRun || !activeRunStatuses.has(activeRun.status)) {
+        activeRunId = undefined
+        await ctx.db.patch(phoneUser._id, {
+          activeRunId: undefined,
+          updatedAt: timestamp,
+        })
+      }
+    }
+
     const runId = await ctx.db.insert('agentRuns', {
       phoneUserId: phoneUser._id,
       browserProfileId: browserProfile?._id,
@@ -94,22 +108,38 @@ export const enqueueAgentPhoneMessage = mutation({
       updatedAt: timestamp,
     })
 
+    if (browserProfile && !activeRunId) {
+      await ctx.db.patch(phoneUser._id, {
+        activeRunId: runId,
+        updatedAt: timestamp,
+      })
+    }
+
+    const queueMessage = !browserProfile
+      ? 'Browser Use profile is missing for this phone number'
+      : activeRunId
+        ? 'Queued behind active remote Codex run'
+        : 'Queued remote Codex run'
+
     await addRunEvent(
       ctx,
       runId,
       browserProfile ? 'queued' : 'needs_profile',
-      browserProfile
-        ? 'Queued remote Codex run'
-        : 'Browser Use profile is missing for this phone number',
+      queueMessage,
     )
 
     return {
-      kind: browserProfile ? ('queued' as const) : ('needs_profile' as const),
+      kind: !browserProfile
+        ? ('needs_profile' as const)
+        : activeRunId
+          ? ('queued_waiting' as const)
+          : ('queued' as const),
       runId,
       phoneUserId: phoneUser._id,
       phoneNumber: phoneUser.phoneNumber,
       prompt: args.prompt,
       browserUseProfileId: browserProfile?.browserUseProfileId,
+      activeRunId,
     }
   },
 })
@@ -126,6 +156,15 @@ export const markRunStarting = mutation({
     if (!run) throw new Error('agent run not found')
 
     const timestamp = now()
+    const phoneUser = await ctx.db.get(run.phoneUserId)
+    if (!phoneUser) throw new Error('phone user not found')
+    if (run.status !== 'queued') {
+      throw new Error(`agent run is not startable from ${run.status}`)
+    }
+    if (phoneUser.activeRunId !== args.runId) {
+      throw new Error('agent run is queued behind another active run')
+    }
+
     const existingSandbox = await ctx.db
       .query('agentSandboxes')
       .withIndex('by_sandboxName', (q) => q.eq('sandboxName', args.sandboxName))
@@ -233,6 +272,16 @@ export const markRunFailed = mutation({
       error: args.error,
       updatedAt: timestamp,
     })
+    const run = await ctx.db.get(args.runId)
+    if (run) {
+      const phoneUser = await ctx.db.get(run.phoneUserId)
+      if (phoneUser?.activeRunId === args.runId) {
+        await ctx.db.patch(phoneUser._id, {
+          activeRunId: undefined,
+          updatedAt: timestamp,
+        })
+      }
+    }
     await addRunEvent(ctx, args.runId, 'failed', args.error)
   },
 })

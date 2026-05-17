@@ -9,6 +9,7 @@ export default defineSchema({
   }).index('id', ['id']),
   phoneUsers: defineTable({
     phoneNumber: v.string(),
+    activeRunId: v.optional(v.id('agentRuns')),
     createdAt: v.number(),
     updatedAt: v.number(),
   }).index('by_phoneNumber', ['phoneNumber']),
@@ -51,6 +52,7 @@ export default defineSchema({
       v.literal('queued'),
       v.literal('starting'),
       v.literal('running'),
+      v.literal('completed'),
       v.literal('failed'),
     ),
     processName: v.optional(v.string()),

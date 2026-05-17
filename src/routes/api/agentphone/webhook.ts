@@ -95,6 +95,15 @@ export const Route = createFileRoute('/api/agentphone/webhook')({
           })
         }
 
+        if (enqueued.kind === 'queued_waiting') {
+          return Response.json({
+            ok: true,
+            status: 'queued',
+            runId: enqueued.runId,
+            activeRunId: enqueued.activeRunId,
+          })
+        }
+
         const sandboxName = sandboxNameForPhone(phoneNumber)
         const browserUseProfileId = enqueued.browserUseProfileId
         if (!browserUseProfileId) {
