@@ -11,7 +11,6 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as PostsRouteImport } from './routes/posts'
 import { Route as IndexRouteImport } from './routes/index'
-import { Route as ApiAgentphoneWebhookRouteImport } from './routes/api/agentphone/webhook'
 
 const PostsRoute = PostsRouteImport.update({
   id: '/posts',
@@ -23,40 +22,31 @@ const IndexRoute = IndexRouteImport.update({
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
-const ApiAgentphoneWebhookRoute = ApiAgentphoneWebhookRouteImport.update({
-  id: '/api/agentphone/webhook',
-  path: '/api/agentphone/webhook',
-  getParentRoute: () => rootRouteImport,
-} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/posts': typeof PostsRoute
-  '/api/agentphone/webhook': typeof ApiAgentphoneWebhookRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/posts': typeof PostsRoute
-  '/api/agentphone/webhook': typeof ApiAgentphoneWebhookRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/posts': typeof PostsRoute
-  '/api/agentphone/webhook': typeof ApiAgentphoneWebhookRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/posts' | '/api/agentphone/webhook'
+  fullPaths: '/' | '/posts'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/posts' | '/api/agentphone/webhook'
-  id: '__root__' | '/' | '/posts' | '/api/agentphone/webhook'
+  to: '/' | '/posts'
+  id: '__root__' | '/' | '/posts'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   PostsRoute: typeof PostsRoute
-  ApiAgentphoneWebhookRoute: typeof ApiAgentphoneWebhookRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -75,20 +65,12 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/api/agentphone/webhook': {
-      id: '/api/agentphone/webhook'
-      path: '/api/agentphone/webhook'
-      fullPath: '/api/agentphone/webhook'
-      preLoaderRoute: typeof ApiAgentphoneWebhookRouteImport
-      parentRoute: typeof rootRouteImport
-    }
   }
 }
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   PostsRoute: PostsRoute,
-  ApiAgentphoneWebhookRoute: ApiAgentphoneWebhookRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

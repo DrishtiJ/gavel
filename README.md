@@ -66,10 +66,10 @@ vp build
 ## Agent Runtime
 
 Gavel's MVP user identity is the sender phone number from AgentPhone webhooks.
-Configure AgentPhone to deliver inbound messages to:
+Configure AgentPhone to deliver inbound messages to the Convex HTTP action:
 
 ```text
-POST /api/agentphone/webhook
+POST https://<convex-deployment>.convex.site/api/agentphone/webhook
 ```
 
 Required server environment:
@@ -108,8 +108,9 @@ the remote execution layer:
 
 ```text
 AgentPhone webhook
-  -> TanStack Start API route
-  -> Convex agentRuntime mutations
+  -> Convex HTTP action
+  -> internal Node action for AgentPhone verification and Blaxel startup
+  -> Convex agentRuntime mutations for durable state
   -> per-user Blaxel sandbox
   -> Codex CLI with BrowserCode MCP
   -> Browser Use cloud profile
@@ -125,8 +126,8 @@ gavel-user-<sha256(phoneNumber).slice(0, 24)>
 Because sandbox creation uses `SandboxInstance.createIfNotExists`, each phone
 user gets one reused Blaxel sandbox instead of a new machine per task. Individual
 messages still start separate `codex exec` processes inside that reused sandbox.
-The default sandbox idle TTL is `24h`, configurable with
-`BLAXEL_SANDBOX_IDLE_TTL`.
+Sandboxes are not configured with an automatic deletion policy; they are meant
+to be durable per-user runtimes and can be stopped or managed from Blaxel.
 
 Convex stores:
 
@@ -144,6 +145,7 @@ environment for that run.
 ### What Is Implemented
 
 - AgentPhone webhook verification and idempotency by webhook ID.
+- Native Convex HTTP route at `/api/agentphone/webhook`.
 - Phone-number based user creation.
 - Browser Use profile lookup per phone user.
 - Per-user Blaxel sandbox naming and `createIfNotExists` reuse.
@@ -160,9 +162,6 @@ environment for that run.
 - Queued follow-up runs do not drain automatically after the active run finishes.
   The app still needs a completion path that clears `activeRunId` and claims the
   next queued run.
-- The webhook route currently lives in TanStack Start at
-  `/api/agentphone/webhook`. It calls Convex with `ConvexHttpClient`; it is not
-  yet implemented as a native `convex/http.ts` HTTP action.
 - The runtime is not yet a long-lived OpenAI Realtime voice worker. AgentPhone
   handles phone transport/STT/TTS, and each inbound message currently maps to a
   Codex run.
