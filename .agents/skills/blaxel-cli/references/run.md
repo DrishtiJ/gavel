@@ -1,0 +1,133 @@
+# bl run
+
+> Execute a Blaxel resource with custom input data.
+
+## Usage
+
+```
+Execute a Blaxel resource with custom input data.
+
+Different resource types behave differently when run:
+
+- agent: Send a single request (non-interactive, unlike 'bl chat')
+         Returns agent response for the given input
+
+- model: Make an inference request to an AI model
+         Calls the model's API endpoint with your data
+
+- job: Start a job execution with batch input
+       Processes multiple tasks defined in JSON batch file
+
+- function/mcp: Invoke an MCP server function
+                Calls a specific tool or method
+
+- sandbox (sbx): Execute a command in a sandbox VM
+                 Runs shell commands via the sandbox process API
+
+Local vs Remote:
+- Remote (default): Runs against deployed resources in your workspace
+- Local (--local): Runs against locally served resources (requires 'bl serve')
+
+Input Formats:
+- Inline JSON with --data json-object
+- From file with --file path/to/input.json
+
+Streaming:
+When agents respond via SSE (Server-Sent Events), the CLI automatically detects
+and parses the stream. Use --stream to explicitly request streaming mode and
+print chunks in real-time as they arrive.
+
+Advanced Usage:
+Use --path, --method, and --params for custom HTTP requests to your resources.
+This is useful for testing specific endpoints or non-standard API calls.
+
+Usage:
+  bl run resource-type resource-name [flags]
+
+Examples:
+  # Run agent with inline data
+  bl run agent my-agent --data '{"inputs": "Summarize this text"}'
+
+  # Run agent with file input
+  bl run agent my-agent --file request.json
+
+  # Run agent with real-time streaming output
+  bl run agent my-agent --data '{"inputs": "hello"}' --stream
+
+  # Run agent with timeout
+  bl run agent my-agent --data '{"inputs": "hello"}' --timeout 120
+
+  # Run job with batch file
+  bl run job my-job --file batches/process-users.json
+
+  # Run job locally for testing (requires 'bl serve' in another terminal)
+  bl run job my-job --local --file batch.json
+
+  # Run job locally with 4 concurrent workers
+  bl run job my-job --local --file batch.json --concurrent 4
+
+  # Run model with custom endpoint
+  bl run model my-model --path /v1/chat/completions --data '{"messages": [...]}'
+
+  # Run with query parameters
+  bl run agent my-agent --data '{}' --params "stream=true" --params "max_tokens=100"
+
+  # Run with custom headers
+  bl run agent my-agent --data '{}' --header "X-User-ID: 123"
+
+  # Debug mode (see full request/response details)
+  bl run agent my-agent --data '{}' --debug
+
+  # Get JSON output for machine parsing
+  bl run agent my-agent --data '{"inputs": "hello"}' -o json
+
+  # List a directory in a sandbox via the filesystem API (double slash => absolute path, bypassing the sandbox workdir)
+  bl run sandbox my-sandbox --method GET --path /filesystem//tmp
+
+  # Read a file from a sandbox via the filesystem API
+  bl run sandbox my-sandbox --method GET --path /filesystem//app/main.py
+
+  # Execute a command in a sandbox
+  bl run sandbox my-sandbox --path /process --data '{"command": "echo hello"}'
+
+  # Execute a command and wait for it to complete (returns stdout/stderr in response)
+  bl run sandbox my-sandbox --path /process --data '{"command": "ls -al /app", "waitForCompletion": true}'
+
+  # Execute a command with a working directory and a process name
+  bl run sandbox my-sandbox --path /process --data '{"command": "npm install", "name": "install-deps", "workingDir": "/app"}'
+
+  # For complex commands (nested quotes, backslashes, multiline), save the JSON in a file with your editor then pass it via --file (no shell-escaping)
+  bl run sandbox my-sandbox --path /process --file ./process-payload.json
+
+  # Execute a long-running command with keep-alive (prevents sandbox auto-standby)
+  bl run sandbox my-sandbox --path /process --data '{"command": "npm run dev -- --port 3000", "name": "dev-server", "keepAlive": true}'
+
+  # You can also use the 'sbx' shorthand
+  bl run sbx my-sandbox --path /process --data '{"command": "python script.py", "waitForCompletion": true}'
+
+Flags:
+  -c, --concurrent int       Number of concurrent workers for local job execution (default 1)
+  -d, --data string          JSON body data for the inference request
+      --debug                Debug mode
+      --directory string     Directory to run the command from
+  -e, --env-file strings     Environment file to load (default [.env])
+  -f, --file string          Input from a file
+      --header stringArray   Request headers in 'Key: Value' format. Can be specified multiple times
+  -h, --help                 help for run
+      --local                Run locally
+      --method string        HTTP method for the inference request (default "POST")
+      --params strings       Query params sent to the inference request
+      --path string          path for the inference request
+  -p, --port int             Port to connect to when using --local (default 1338)
+  -s, --secrets strings      Secrets to pass to the execution
+      --stream               Stream SSE responses in real-time
+      --timeout int          Request timeout in seconds (default: no timeout)
+      --upload-file string   This transfers the specified local file to the remote URL
+
+Global Flags:
+  -o, --output string          Output format. One of: pretty,yaml,json,table
+      --skip-version-warning   Skip version warning
+  -u, --utc                    Enable UTC timezone
+  -v, --verbose                Enable verbose output
+  -w, --workspace string       Specify the workspace name
+```
