@@ -152,21 +152,21 @@ environment for that run.
 - Custom Blaxel sandbox image under `blaxel/codex-browsercode`.
 - BrowserCode MCP plugin vendored under `plugins/browsercode`.
 - Remote `codex exec` launch inside the user sandbox.
-- Convex run/sandbox status updates for queued, starting, running, and failed
-  states.
+- Convex run/sandbox status updates for queued, starting, running, completed,
+  and failed states.
+- Scheduled Convex monitoring for Blaxel process status and Codex JSONL logs,
+  appended into `agentRunEvents`.
 - Per-phone-user active run locking with `phoneUsers.activeRunId`, so concurrent
   webhooks cannot start multiple Codex processes in the same sandbox.
 
 ### Important Gaps For Contributors
 
 - Queued follow-up runs do not drain automatically after the active run finishes.
-  The app still needs a completion path that clears `activeRunId` and claims the
-  next queued run.
+  Completion clears `activeRunId`, but the next queued run is not claimed and
+  started automatically yet.
 - The runtime is not yet a long-lived OpenAI Realtime voice worker. AgentPhone
   handles phone transport/STT/TTS, and each inbound message currently maps to a
   Codex run.
-- Successful remote runs are marked as started, but the app does not yet stream
-  Codex JSONL progress back into `agentRunEvents` or mark completion.
 - Human approval checkpoints are prompt-level instructions only. The product
   still needs explicit approval state before sending marketplace messages,
   accepting offers, or committing to logistics.

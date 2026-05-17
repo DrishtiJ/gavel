@@ -230,6 +230,7 @@ export const markRunRemoteStarted = mutation({
       status: 'running',
       processName: args.processName,
       processStatus: args.processStatus,
+      processLogOffset: 0,
       updatedAt: timestamp,
     })
     await addRunEvent(
@@ -237,6 +238,89 @@ export const markRunRemoteStarted = mutation({
       args.runId,
       'running',
       `Started remote process ${args.processName}`,
+    )
+  },
+})
+
+export const appendRunProgress = mutation({
+  args: {
+    runId: v.id('agentRuns'),
+    processStatus: v.optional(v.string()),
+    processLogOffset: v.number(),
+    events: v.array(
+      v.object({
+        type: v.string(),
+        message: v.string(),
+      }),
+    ),
+  },
+  handler: async (ctx, args) => {
+    const timestamp = now()
+    const run = await ctx.db.get(args.runId)
+    if (!run) throw new Error('agent run not found')
+    if (run.status !== 'running') return
+
+    await ctx.db.patch(args.runId, {
+      processStatus: args.processStatus ?? run.processStatus,
+      processLogOffset: args.processLogOffset,
+      updatedAt: timestamp,
+    })
+
+    for (const event of args.events) {
+      await addRunEvent(ctx, args.runId, event.type, event.message)
+    }
+  },
+})
+
+export const markRunCompleted = mutation({
+  args: {
+    runId: v.id('agentRuns'),
+    sandboxName: v.string(),
+    processName: v.string(),
+    processStatus: v.string(),
+    processLogOffset: v.number(),
+  },
+  handler: async (ctx, args) => {
+    const run = await ctx.db.get(args.runId)
+    if (!run) throw new Error('agent run not found')
+
+    const timestamp = now()
+    const sandbox = await ctx.db
+      .query('agentSandboxes')
+      .withIndex('by_sandboxName', (q) => q.eq('sandboxName', args.sandboxName))
+      .first()
+
+    if (sandbox) {
+      await ctx.db.patch(sandbox._id, {
+        status: 'ready',
+        lastError: undefined,
+        lastSeenAt: timestamp,
+        updatedAt: timestamp,
+      })
+    }
+
+    await ctx.db.patch(args.runId, {
+      status: 'completed',
+      processName: args.processName,
+      processStatus: args.processStatus,
+      processLogOffset: args.processLogOffset,
+      completedAt: timestamp,
+      updatedAt: timestamp,
+    })
+
+    const phoneUser = await ctx.db.get(run.phoneUserId)
+    if (phoneUser?.activeRunId === args.runId) {
+      await ctx.db.patch(phoneUser._id, {
+        activeRunId: undefined,
+        updatedAt: timestamp,
+      })
+    }
+
+    await addRunEvent(
+      ctx,
+      args.runId,
+      'completed',
+      'Remote Codex run completed',
     )
   },
 })

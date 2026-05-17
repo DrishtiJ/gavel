@@ -38,6 +38,11 @@ type WebhookActionResult = {
   body: Record<string, unknown>
 }
 
+type RunProgressEvent = {
+  type: string
+  message: string
+}
+
 type EnqueueAgentPhoneMessageResult =
   | {
       kind: 'duplicate'
@@ -128,6 +133,50 @@ const markRunRemoteStartedRef = makeFunctionReference(
   null
 >
 
+const appendRunProgressRef = makeFunctionReference(
+  'agentRuntime:appendRunProgress',
+) as unknown as FunctionReference<
+  'mutation',
+  'public',
+  {
+    runId: string
+    processStatus?: string
+    processLogOffset: number
+    events: RunProgressEvent[]
+  },
+  null
+>
+
+const markRunCompletedRef = makeFunctionReference(
+  'agentRuntime:markRunCompleted',
+) as unknown as FunctionReference<
+  'mutation',
+  'public',
+  {
+    runId: string
+    sandboxName: string
+    processName: string
+    processStatus: string
+    processLogOffset: number
+  },
+  null
+>
+
+const monitorRemoteCodexRunRef = makeFunctionReference(
+  'agentphoneWebhook:monitorRemoteCodexRun',
+) as unknown as FunctionReference<
+  'action',
+  'internal',
+  {
+    runId: string
+    sandboxName: string
+    processName: string
+    logOffset: number
+    attempt: number
+  },
+  null
+>
+
 const shellQuote = (value: string) => `'${value.replaceAll("'", "'\\''")}'`
 
 const json = (
@@ -198,6 +247,65 @@ function isSupportedMessageWebhook(
 function sandboxNameForPhone(phoneNumber: string) {
   const digest = createHash('sha256').update(phoneNumber).digest('hex')
   return `gavel-user-${digest.slice(0, 24)}`
+}
+
+const terminalProcessStatuses = new Set([
+  'completed',
+  'failed',
+  'killed',
+  'stopped',
+])
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
+
+function truncateEventMessage(message: string) {
+  return message.length > 1_500 ? `${message.slice(0, 1_497)}...` : message
+}
+
+function eventFromCodexLogLine(line: string): RunProgressEvent {
+  const trimmed = line.trim()
+  if (!trimmed) return { type: 'codex_log', message: '' }
+
+  try {
+    const parsed = JSON.parse(trimmed) as Record<string, unknown>
+    const type =
+      typeof parsed.type === 'string'
+        ? parsed.type
+        : typeof parsed.event === 'string'
+          ? parsed.event
+          : 'json'
+    const message =
+      typeof parsed.message === 'string'
+        ? parsed.message
+        : typeof parsed.msg === 'string'
+          ? parsed.msg
+          : typeof parsed.summary === 'string'
+            ? parsed.summary
+            : trimmed
+
+    return {
+      type: `codex_${type}`.replaceAll(/[^a-zA-Z0-9_:-]/g, '_'),
+      message: truncateEventMessage(message),
+    }
+  } catch {
+    return {
+      type: 'codex_log',
+      message: truncateEventMessage(trimmed),
+    }
+  }
+}
+
+function eventsFromNewLogs(logs: string, offset: number) {
+  const safeOffset = offset > logs.length ? 0 : offset
+  const nextOffset = logs.length
+  const events = logs
+    .slice(safeOffset)
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map(eventFromCodexLogLine)
+
+  return { nextOffset, events }
 }
 
 async function startRemoteCodexRun(input: StartRemoteCodexRunInput) {
@@ -392,6 +500,13 @@ export const handleAgentPhoneWebhook = internalAction({
         processName: remoteRun.processName,
         processStatus: remoteRun.processStatus,
       })
+      await ctx.scheduler.runAfter(0, monitorRemoteCodexRunRef, {
+        runId: enqueued.runId,
+        sandboxName: remoteRun.sandboxName,
+        processName: remoteRun.processName,
+        logOffset: 0,
+        attempt: 1,
+      })
 
       return json(200, {
         ok: true,
@@ -408,6 +523,79 @@ export const handleAgentPhoneWebhook = internalAction({
       })
 
       return json(500, { ok: false, error: 'failed to start remote codex run' })
+    }
+  },
+})
+
+export const monitorRemoteCodexRun = internalAction({
+  args: {
+    runId: v.string(),
+    sandboxName: v.string(),
+    processName: v.string(),
+    logOffset: v.number(),
+    attempt: v.number(),
+  },
+  handler: async (ctx, args) => {
+    try {
+      const sandbox = await SandboxInstance.get(args.sandboxName)
+      const [processResult, logs] = await Promise.all([
+        sandbox.process.get(args.processName),
+        sandbox.process.logs(args.processName, 'all'),
+      ])
+      const processStatus = processResult.status ?? 'running'
+      const { nextOffset, events } = eventsFromNewLogs(logs, args.logOffset)
+
+      if (events.length > 0 || nextOffset !== args.logOffset) {
+        await ctx.runMutation(appendRunProgressRef, {
+          runId: args.runId,
+          processStatus,
+          processLogOffset: nextOffset,
+          events,
+        })
+      }
+
+      if (processStatus === 'completed') {
+        await ctx.runMutation(markRunCompletedRef, {
+          runId: args.runId,
+          sandboxName: args.sandboxName,
+          processName: args.processName,
+          processStatus,
+          processLogOffset: nextOffset,
+        })
+        return null
+      }
+
+      if (terminalProcessStatuses.has(processStatus)) {
+        await ctx.runMutation(markRunFailedRef, {
+          runId: args.runId,
+          sandboxName: args.sandboxName,
+          error: `Remote Codex process ended with status ${processStatus}`,
+        })
+        return null
+      }
+
+      await ctx.scheduler.runAfter(2_000, monitorRemoteCodexRunRef, {
+        ...args,
+        logOffset: nextOffset,
+        attempt: 1,
+      })
+      return null
+    } catch (err) {
+      if (args.attempt < 30) {
+        await sleep(1_000)
+        await ctx.scheduler.runAfter(5_000, monitorRemoteCodexRunRef, {
+          ...args,
+          attempt: args.attempt + 1,
+        })
+        return null
+      }
+
+      await ctx.runMutation(markRunFailedRef, {
+        runId: args.runId,
+        sandboxName: args.sandboxName,
+        error: err instanceof Error ? err.message : String(err),
+      })
+      return null
     }
   },
 })

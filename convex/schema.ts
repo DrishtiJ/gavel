@@ -57,6 +57,8 @@ export default defineSchema({
     ),
     processName: v.optional(v.string()),
     processStatus: v.optional(v.string()),
+    processLogOffset: v.optional(v.number()),
+    completedAt: v.optional(v.number()),
     error: v.optional(v.string()),
     createdAt: v.number(),
     updatedAt: v.number(),
