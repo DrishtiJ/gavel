@@ -17,4 +17,5 @@ cp "$SCRIPT_DIR/entrypoint.sh" "$CONTEXT_DIR/blaxel/codex-browsercode/entrypoint
 cp "$SCRIPT_DIR/codex-config.toml" "$CONTEXT_DIR/blaxel/codex-browsercode/codex-config.toml"
 cp -R "$REPO_ROOT/plugins/browsercode" "$CONTEXT_DIR/plugins/browsercode"
 
-bl push -d "$CONTEXT_DIR" --name gavel-codex-browsercode --type sandbox -y
+cd "$CONTEXT_DIR"
+bl push --name gavel-codex-browsercode --type sandbox -y
