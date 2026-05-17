@@ -18,7 +18,7 @@ function Home() {
         src="/gavel-desk-bg.png"
         alt=""
         aria-hidden="true"
-        className="absolute inset-0 h-full w-full object-cover object-center"
+        className="absolute inset-0 h-full w-full object-cover object-left"
       />
       <div className="absolute inset-0 bg-[linear-gradient(90deg,rgba(0,0,0,0.22)_0%,rgba(0,0,0,0.12)_44%,rgba(0,0,0,0.5)_100%)]" />
       <div className="absolute top-[92px] right-[8vw] bottom-0 hidden w-[35vw] items-center justify-center py-[4vh] md:flex xl:right-[12vw]">
@@ -114,7 +114,7 @@ function HeroCopy() {
           Message {phoneNumber}
         </a>
         <p className="pl-1 text-[1.05rem] leading-6 text-white/58">
-          Opens Messages. No marketplace account setup.
+          Opens Messages.
         </p>
       </div>
     </div>
