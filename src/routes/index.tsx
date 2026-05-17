@@ -22,13 +22,13 @@ function Home() {
         className="absolute inset-0 h-full w-full object-cover object-center"
       />
       <div className="absolute inset-0 bg-[linear-gradient(90deg,rgba(0,0,0,0.22)_0%,rgba(0,0,0,0.12)_44%,rgba(0,0,0,0.5)_100%)]" />
-      <div className="absolute right-[8.5vw] bottom-[1.5vh] hidden h-[14vh] w-[28vw] rounded-full bg-black/80 blur-2xl md:block" />
-      <div className="absolute right-[13vw] top-[16vh] hidden h-[58vh] w-[26vw] rounded-full bg-white/7 blur-3xl md:block" />
+      <div className="absolute right-[8.5vw] bottom-[4vh] hidden h-[12vh] w-[26vw] rounded-full bg-black/80 blur-2xl md:block" />
+      <div className="absolute right-[13vw] top-[17vh] hidden h-[55vh] w-[25vw] rounded-full bg-white/7 blur-3xl md:block" />
       <img
         src="/gavel-phone-angled.png"
         alt=""
         aria-hidden="true"
-        className="absolute right-[8.5vw] bottom-[-5vh] hidden h-[91vh] max-h-[980px] min-h-[720px] w-auto drop-shadow-[0_38px_84px_rgba(0,0,0,0.8)] md:block xl:right-[11vw] xl:h-[92vh]"
+        className="absolute right-[8.5vw] bottom-[-2vh] hidden h-[86vh] max-h-[930px] min-h-[680px] w-auto drop-shadow-[0_38px_84px_rgba(0,0,0,0.8)] md:block xl:right-[11vw] xl:h-[88vh]"
       />
       <img
         src="/gavel-phone-angled.png"
