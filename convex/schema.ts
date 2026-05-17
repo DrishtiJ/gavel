@@ -72,4 +72,28 @@ export default defineSchema({
     message: v.string(),
     createdAt: v.number(),
   }).index('by_runId_and_sequence', ['runId', 'sequence']),
+  listings: defineTable({
+    title: v.string(),
+    description: v.string(),
+    askingPrice: v.number(),
+    currency: v.string(),
+    status: v.union(v.literal('active'), v.literal('sold')),
+    embedding: v.optional(v.array(v.float64())),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index('by_status', ['status'])
+    .vectorIndex('by_embedding', {
+      vectorField: 'embedding',
+      dimensions: 768,
+      filterFields: ['status'],
+    }),
+  bookings: defineTable({
+    listingId: v.id('listings'),
+    slotIso: v.string(),
+    finalPrice: v.number(),
+    customerPhone: v.optional(v.string()),
+    callId: v.optional(v.string()),
+    createdAt: v.number(),
+  }).index('by_listingId', ['listingId']),
 })
