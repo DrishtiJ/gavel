@@ -11,6 +11,7 @@
 import type * as agentRuntime from "../agentRuntime.js";
 import type * as agentphoneWebhook from "../agentphoneWebhook.js";
 import type * as http from "../http.js";
+import type * as listings from "../listings.js";
 import type * as posts from "../posts.js";
 
 import type {
@@ -23,6 +24,7 @@ declare const fullApi: ApiFromModules<{
   agentRuntime: typeof agentRuntime;
   agentphoneWebhook: typeof agentphoneWebhook;
   http: typeof http;
+  listings: typeof listings;
   posts: typeof posts;
 }>;
 
