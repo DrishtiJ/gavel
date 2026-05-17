@@ -38,9 +38,19 @@ AGENTPHONE_WEBHOOK_SECRET=
 BL_WORKSPACE=
 BL_API_KEY=
 BLAXEL_CODEX_BROWSERCODE_IMAGE=
-OPENAI_API_KEY=
 BROWSER_USE_API_KEY=
 ```
+
+Remote Codex auth requires one of:
+
+```bash
+OPENAI_API_KEY=
+CODEX_ACCESS_TOKEN=
+CODEX_AUTH_JSON_B64=
+```
+
+`CODEX_AUTH_JSON_B64` is a base64-encoded Codex auth cache for trusted
+headless runners. Do not commit or log it.
 
 Client/demo environments also need:
 

@@ -10,6 +10,7 @@ export default defineSchema({
   phoneUsers: defineTable({
     phoneNumber: v.string(),
     activeRunId: v.optional(v.id('agentRuns')),
+    codexThreadId: v.optional(v.string()),
     createdAt: v.number(),
     updatedAt: v.number(),
   }).index('by_phoneNumber', ['phoneNumber']),
@@ -47,6 +48,9 @@ export default defineSchema({
     agentPhoneConversationId: v.optional(v.string()),
     channel: v.union(v.literal('sms'), v.literal('mms'), v.literal('imessage')),
     prompt: v.string(),
+    runtime: v.optional(v.union(v.literal('exec'), v.literal('app_server'))),
+    codexThreadId: v.optional(v.string()),
+    codexTurnId: v.optional(v.string()),
     status: v.union(
       v.literal('needs_profile'),
       v.literal('queued'),
@@ -54,6 +58,7 @@ export default defineSchema({
       v.literal('running'),
       v.literal('completed'),
       v.literal('failed'),
+      v.literal('interrupted'),
     ),
     processName: v.optional(v.string()),
     processStatus: v.optional(v.string()),
@@ -72,4 +77,22 @@ export default defineSchema({
     message: v.string(),
     createdAt: v.number(),
   }).index('by_runId_and_sequence', ['runId', 'sequence']),
+  conversationMessages: defineTable({
+    phoneUserId: v.id('phoneUsers'),
+    runId: v.optional(v.id('agentRuns')),
+    inboundWebhookId: v.optional(v.string()),
+    direction: v.union(
+      v.literal('user'),
+      v.literal('agent'),
+      v.literal('system'),
+    ),
+    channel: v.optional(
+      v.union(v.literal('sms'), v.literal('mms'), v.literal('imessage')),
+    ),
+    body: v.string(),
+    createdAt: v.number(),
+  })
+    .index('by_phoneUserId_createdAt', ['phoneUserId', 'createdAt'])
+    .index('by_inboundWebhookId', ['inboundWebhookId'])
+    .index('by_runId', ['runId']),
 })

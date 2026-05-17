@@ -25,12 +25,12 @@ export const Route = createRootRouteWithContext<{
         content: 'width=device-width, initial-scale=1',
       },
       {
-        title: 'Gavel',
+        title: 'gavel',
       },
       {
         name: 'description',
         content:
-          'Gavel is an AI agent that plans, follows up, and keeps working from iMessage.',
+          'Gavel helps you sell stuff by messaging an agent that creates listings, handles buyers, compares offers, and asks before acting.',
       },
     ],
     links: [
@@ -39,6 +39,11 @@ export const Route = createRootRouteWithContext<{
         rel: 'apple-touch-icon',
         sizes: '180x180',
         href: '/apple-touch-icon.png',
+      },
+      {
+        rel: 'icon',
+        type: 'image/png',
+        href: '/gavel-icon.png',
       },
       {
         rel: 'icon',
