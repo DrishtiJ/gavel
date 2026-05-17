@@ -1,5 +1,7 @@
 import { ChatCircleText } from '@phosphor-icons/react'
 import { createFileRoute } from '@tanstack/react-router'
+import type { RefObject } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
 import { buttonVariants } from '~/components/ui/button'
 import { cn } from '~/lib/utils'
@@ -12,6 +14,73 @@ export const Route = createFileRoute('/')({
 })
 
 function Home() {
+  const copyRef = useRef<HTMLDivElement>(null)
+  const desktopPhoneRef = useRef<HTMLDivElement>(null)
+  const mobilePhoneRef = useRef<HTMLImageElement>(null)
+  const [phoneOverlapsCopy, setPhoneOverlapsCopy] = useState(false)
+
+  useEffect(() => {
+    let frame = 0
+
+    const isVisible = (element: HTMLElement | null) => {
+      if (!element) return false
+
+      const style = window.getComputedStyle(element)
+      return (
+        style.display !== 'none' &&
+        style.visibility !== 'hidden' &&
+        element.getClientRects().length > 0
+      )
+    }
+
+    const measure = () => {
+      const copy = copyRef.current
+      if (!copy) return
+
+      const copyRect = copy.getBoundingClientRect()
+      const phoneElements = [desktopPhoneRef.current, mobilePhoneRef.current]
+
+      const overlaps = phoneElements.some((phone) => {
+        if (!phone || !isVisible(phone)) return false
+
+        const phoneRect = phone.getBoundingClientRect()
+        return (
+          phoneRect.left < copyRect.right - 12 &&
+          phoneRect.right > copyRect.left + 12 &&
+          phoneRect.top < copyRect.bottom - 12 &&
+          phoneRect.bottom > copyRect.top + 12
+        )
+      })
+
+      setPhoneOverlapsCopy(overlaps)
+    }
+
+    const scheduleMeasure = () => {
+      window.cancelAnimationFrame(frame)
+      frame = window.requestAnimationFrame(measure)
+    }
+
+    const resizeObserver = new ResizeObserver(scheduleMeasure)
+    ;[copyRef.current, desktopPhoneRef.current, mobilePhoneRef.current].forEach(
+      (element) => {
+        if (element) resizeObserver.observe(element)
+      },
+    )
+
+    scheduleMeasure()
+    window.addEventListener('resize', scheduleMeasure)
+    window.addEventListener('orientationchange', scheduleMeasure)
+    window.addEventListener('load', scheduleMeasure)
+
+    return () => {
+      window.cancelAnimationFrame(frame)
+      resizeObserver.disconnect()
+      window.removeEventListener('resize', scheduleMeasure)
+      window.removeEventListener('orientationchange', scheduleMeasure)
+      window.removeEventListener('load', scheduleMeasure)
+    }
+  }, [])
+
   return (
     <main className="relative min-h-svh overflow-hidden bg-black font-sans text-white">
       <img
@@ -21,7 +90,10 @@ function Home() {
         className="absolute inset-0 h-full w-full object-cover object-left"
       />
       <div className="absolute inset-0 bg-[linear-gradient(90deg,rgba(0,0,0,0.22)_0%,rgba(0,0,0,0.12)_44%,rgba(0,0,0,0.5)_100%)]" />
-      <div className="absolute top-[92px] right-[8vw] bottom-0 hidden w-[35vw] items-center justify-center py-[4vh] md:flex xl:right-[12vw]">
+      <div
+        ref={desktopPhoneRef}
+        className="absolute top-[92px] right-[8vw] bottom-0 hidden w-[35vw] items-center justify-center py-[4vh] md:flex xl:right-[12vw]"
+      >
         <div className="absolute bottom-[5vh] h-[10vh] w-full rounded-full bg-black/80 blur-2xl" />
         <div className="absolute h-[58%] w-[88%] rounded-full bg-white/7 blur-3xl" />
         <img
@@ -32,6 +104,7 @@ function Home() {
         />
       </div>
       <img
+        ref={mobilePhoneRef}
         src="/gavel-phone-angled.png"
         alt=""
         aria-hidden="true"
@@ -43,7 +116,7 @@ function Home() {
         <Header />
 
         <div className="mx-auto flex w-full max-w-[1440px] items-center px-7 py-10 sm:px-12 lg:px-20 lg:py-0">
-          <HeroCopy />
+          <HeroCopy copyRef={copyRef} showBackdrop={phoneOverlapsCopy} />
         </div>
       </section>
     </main>
@@ -88,9 +161,21 @@ function Header() {
   )
 }
 
-function HeroCopy() {
+function HeroCopy({
+  copyRef,
+  showBackdrop,
+}: {
+  copyRef: RefObject<HTMLDivElement | null>
+  showBackdrop: boolean
+}) {
   return (
-    <div className="max-w-[620px] pb-8 lg:-mt-4">
+    <div
+      ref={copyRef}
+      className={cn(
+        'relative isolate max-w-[620px] pb-8 before:pointer-events-none before:absolute before:-inset-x-8 before:-inset-y-6 before:-z-10 before:rounded-[2rem] before:bg-[radial-gradient(ellipse_at_center,rgba(0,0,0,0.86)_0%,rgba(0,0,0,0.68)_46%,rgba(0,0,0,0)_76%)] before:opacity-0 before:blur-xl before:transition-opacity before:duration-200 lg:-mt-4',
+        showBackdrop && 'before:opacity-100',
+      )}
+    >
       <h1 className="max-w-[11ch] text-[4.4rem] leading-[0.95] font-semibold tracking-[-0.06em] text-balance text-white drop-shadow-[0_7px_32px_rgba(255,255,255,0.16)] sm:text-[5.6rem] lg:text-[6.1rem]">
         Sell stuff by texting <span className="text-[#5aa9ff]">gavel</span>
       </h1>
