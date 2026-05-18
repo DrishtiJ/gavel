@@ -17,11 +17,12 @@ RUN npm install -g @openai/codex@0.130.0 \
   && ln -s /root/.bun/bin/bun /usr/local/bin/bun
 
 RUN useradd --create-home --shell /bin/bash codex \
-  && mkdir -p /opt/gavel /workspace/gavel-agent /workspace/gavel-runs /home/codex/.codex \
+  && mkdir -p /opt/gavel /workspace/gavel-agent /workspace/gavel-runs /home/codex/.codex /root/.codex \
   && chown -R codex:codex /workspace /home/codex
 
 COPY plugins/browsercode /opt/gavel/plugins/browsercode
 COPY blaxel/codex-browsercode/codex-config.toml /home/codex/.codex/config.toml
+COPY blaxel/codex-browsercode/codex-config.toml /root/.codex/config.toml
 COPY blaxel/codex-browsercode/entrypoint.sh /entrypoint.sh
 
 RUN chmod +x /entrypoint.sh \

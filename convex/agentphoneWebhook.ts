@@ -1065,6 +1065,11 @@ async function ensureCodexAppServer(input: {
 
   if (needsStart) {
     const command = [
+      'mkdir -p /root/.codex "$HOME/.codex" &&',
+      'if [ -f /home/codex/.codex/config.toml ]; then',
+      'cp /home/codex/.codex/config.toml /root/.codex/config.toml &&',
+      'cp /home/codex/.codex/config.toml "$HOME/.codex/config.toml";',
+      'fi;',
       'if [ -n "${CODEX_AUTH_JSON_B64:-}" ]; then',
       'mkdir -p "$HOME/.codex" &&',
       'printf %s "$CODEX_AUTH_JSON_B64" | base64 -d > "$HOME/.codex/auth.json" &&',
