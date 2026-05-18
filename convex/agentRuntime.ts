@@ -47,6 +47,16 @@ type FormattedMessageInput = {
   imageUrls: string[]
 }
 
+type BufferedAgentPhoneMessage = {
+  webhookId: string
+  phoneNumber: string
+  channel: 'sms' | 'mms' | 'imessage'
+  prompt: string
+  conversationId?: string
+  attachments: MessageAttachmentInput[]
+  createdAt: number
+}
+
 type BrowserProfileResolution =
   | {
       source: 'phone'
@@ -356,6 +366,19 @@ const getInputForRun = async (
 
   const attachments = await getMessageAttachments(ctx, message._id)
   return await formatMessageInput(ctx, message.body, attachments)
+}
+
+function combineMessageInputs(inputs: FormattedMessageInput[]) {
+  return {
+    body: inputs
+      .map((input, index) =>
+        inputs.length === 1
+          ? input.body
+          : `Incoming message ${index + 1}:\n${input.body}`,
+      )
+      .join('\n\n'),
+    imageUrls: inputs.flatMap((input) => input.imageUrls),
+  }
 }
 
 const ensureSandboxAssignment = async (
@@ -818,6 +841,333 @@ export const enqueueAgentPhoneMessageForAppServer = mutation({
       sandboxName,
       prompt: message.prompt,
       imageUrls: message.imageUrls,
+      browserUseProfileId: browserProfile.browserUseProfileId,
+      codexThreadId: phoneUser.codexThreadId,
+      conversationHistory: await getConversationHistory(ctx, phoneUser._id),
+    }
+  },
+})
+
+export const bufferAgentPhoneMessageForAppServer = mutation({
+  args: {
+    webhookId: v.string(),
+    phoneNumber: v.string(),
+    channel: messageChannel,
+    prompt: v.string(),
+    conversationId: v.optional(v.string()),
+    attachments: v.optional(v.array(attachmentInput)),
+    debounceMs: v.number(),
+  },
+  handler: async (ctx, args) => {
+    const duplicateMessage = await ctx.db
+      .query('conversationMessages')
+      .withIndex('by_inboundWebhookId', (q) =>
+        q.eq('inboundWebhookId', args.webhookId),
+      )
+      .first()
+    if (duplicateMessage) {
+      return { kind: 'duplicate' as const, runId: duplicateMessage.runId }
+    }
+
+    const duplicateRun = await ctx.db
+      .query('agentRuns')
+      .withIndex('by_inboundWebhookId', (q) =>
+        q.eq('inboundWebhookId', args.webhookId),
+      )
+      .first()
+    if (duplicateRun) {
+      return { kind: 'duplicate' as const, runId: duplicateRun._id }
+    }
+
+    const duplicateBuffer = await ctx.db
+      .query('inboundMessageBuffer')
+      .withIndex('by_webhookId', (q) => q.eq('webhookId', args.webhookId))
+      .first()
+    if (duplicateBuffer) {
+      return {
+        kind: 'buffered' as const,
+        phoneNumber: duplicateBuffer.phoneNumber,
+      }
+    }
+
+    const timestamp = now()
+    const phoneNumber = normalizePhoneNumber(args.phoneNumber)
+    await ctx.db.insert('inboundMessageBuffer', {
+      webhookId: args.webhookId,
+      phoneNumber,
+      channel: args.channel,
+      prompt: args.prompt,
+      conversationId: args.conversationId,
+      attachments: args.attachments ?? [],
+      status: 'pending',
+      processAfter: timestamp + Math.max(0, args.debounceMs),
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    })
+
+    return { kind: 'buffered' as const, phoneNumber }
+  },
+})
+
+export const enqueueBufferedAgentPhoneMessagesForAppServer = mutation({
+  args: {
+    phoneNumber: v.string(),
+    now: v.number(),
+  },
+  handler: async (ctx, args): Promise<AppServerEnqueueResult> => {
+    const phoneNumber = normalizePhoneNumber(args.phoneNumber)
+    const pending = await ctx.db
+      .query('inboundMessageBuffer')
+      .withIndex('by_phoneNumber_status_processAfter', (q) =>
+        q
+          .eq('phoneNumber', phoneNumber)
+          .eq('status', 'pending')
+          .lte('processAfter', args.now),
+      )
+      .order('asc')
+      .take(20)
+
+    if (pending.length === 0) {
+      return { kind: 'duplicate' }
+    }
+
+    const timestamp = now()
+    for (const message of pending) {
+      await ctx.db.patch(message._id, {
+        status: 'processing',
+        updatedAt: timestamp,
+      })
+    }
+
+    const messages: BufferedAgentPhoneMessage[] = pending
+      .sort((left, right) => left.createdAt - right.createdAt)
+      .map((message) => ({
+        webhookId: message.webhookId,
+        phoneNumber: message.phoneNumber,
+        channel: message.channel,
+        prompt: message.prompt,
+        conversationId: message.conversationId,
+        attachments: message.attachments,
+        createdAt: message.createdAt,
+      }))
+
+    let phoneUser = await ctx.db
+      .query('phoneUsers')
+      .withIndex('by_phoneNumber', (q) => q.eq('phoneNumber', phoneNumber))
+      .first()
+
+    if (!phoneUser) {
+      const phoneUserId = await ctx.db.insert('phoneUsers', {
+        phoneNumber,
+        createdAt: timestamp,
+        updatedAt: timestamp,
+      })
+      phoneUser = (await ctx.db.get(phoneUserId))!
+    } else {
+      await ctx.db.patch(phoneUser._id, { updatedAt: timestamp })
+    }
+
+    const browserProfile = await getBrowserProfile(ctx, phoneUser._id)
+    const inboundWebhookId =
+      messages.length === 1
+        ? messages[0].webhookId
+        : `batch:${messages[0].webhookId}`
+    const conversationId = messages.at(-1)?.conversationId
+    const channel = messages.at(-1)?.channel ?? 'sms'
+    const runPrompt = messages
+      .map((message) => message.prompt)
+      .filter(Boolean)
+      .join('\n\n')
+
+    if (!browserProfile) {
+      const runId = await ctx.db.insert('agentRuns', {
+        phoneUserId: phoneUser._id,
+        inboundWebhookId,
+        agentPhoneConversationId: conversationId,
+        channel,
+        prompt: runPrompt,
+        runtime: 'app_server',
+        status: 'needs_profile',
+        createdAt: timestamp,
+        updatedAt: timestamp,
+      })
+
+      const formattedInputs: FormattedMessageInput[] = []
+      for (const message of messages) {
+        const inserted = await insertUserConversationMessage(ctx, {
+          phoneUserId: phoneUser._id,
+          runId,
+          inboundWebhookId: message.webhookId,
+          channel: message.channel,
+          body: message.prompt,
+          attachments: message.attachments,
+          createdAt: message.createdAt,
+        })
+        formattedInputs.push({
+          body: inserted.prompt,
+          imageUrls: inserted.imageUrls,
+        })
+      }
+
+      for (const message of pending) {
+        await ctx.db.patch(message._id, {
+          status: 'processed',
+          updatedAt: timestamp,
+        })
+      }
+
+      await addRunEvent(
+        ctx,
+        runId,
+        'needs_profile',
+        'Browser Use profile is missing for this phone number',
+      )
+
+      return {
+        kind: 'needs_profile',
+        runId,
+        phoneUserId: phoneUser._id,
+        phoneNumber: phoneUser.phoneNumber,
+        prompt: combineMessageInputs(formattedInputs).body,
+      }
+    }
+
+    const activeRun = phoneUser.activeRunId
+      ? await ctx.db.get(phoneUser.activeRunId)
+      : null
+
+    if (
+      activeRun &&
+      activeRun.runtime === 'app_server' &&
+      activeRun.status === 'running' &&
+      activeRun.codexThreadId &&
+      activeRun.codexTurnId
+    ) {
+      const formattedInputs: FormattedMessageInput[] = []
+      for (const message of messages) {
+        const inserted = await insertUserConversationMessage(ctx, {
+          phoneUserId: phoneUser._id,
+          runId: activeRun._id,
+          inboundWebhookId: message.webhookId,
+          channel: message.channel,
+          body: message.prompt,
+          attachments: message.attachments,
+          createdAt: message.createdAt,
+        })
+        formattedInputs.push({
+          body: inserted.prompt,
+          imageUrls: inserted.imageUrls,
+        })
+      }
+
+      for (const message of pending) {
+        await ctx.db.patch(message._id, {
+          status: 'processed',
+          updatedAt: timestamp,
+        })
+      }
+
+      await addRunEvent(
+        ctx,
+        activeRun._id,
+        'steer_requested',
+        `Steering active turn with ${messages.length} buffered webhook(s)`,
+      )
+
+      const input = combineMessageInputs(formattedInputs)
+      return {
+        kind: 'steer',
+        runId: activeRun._id,
+        phoneUserId: phoneUser._id,
+        phoneNumber: phoneUser.phoneNumber,
+        sandboxName: activeRun.sandboxName,
+        prompt: input.body,
+        imageUrls: input.imageUrls,
+        browserUseProfileId: browserProfile.browserUseProfileId,
+        codexThreadId: activeRun.codexThreadId,
+        codexTurnId: activeRun.codexTurnId,
+        conversationHistory: await getConversationHistory(ctx, phoneUser._id),
+      }
+    }
+
+    if (phoneUser.activeRunId && !activeRun) {
+      await ctx.db.patch(phoneUser._id, {
+        activeRunId: undefined,
+        updatedAt: timestamp,
+      })
+    }
+
+    const sandboxName = await ensureSandboxAssignment(
+      ctx,
+      phoneUser._id,
+      timestamp,
+    )
+
+    const runId = await ctx.db.insert('agentRuns', {
+      phoneUserId: phoneUser._id,
+      browserProfileId:
+        browserProfile.source === 'phone'
+          ? browserProfile.browserProfileId
+          : undefined,
+      sandboxName,
+      inboundWebhookId,
+      agentPhoneConversationId: conversationId,
+      channel,
+      prompt: runPrompt,
+      runtime: 'app_server',
+      codexThreadId: phoneUser.codexThreadId,
+      status: 'queued',
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    })
+
+    const formattedInputs: FormattedMessageInput[] = []
+    for (const message of messages) {
+      const inserted = await insertUserConversationMessage(ctx, {
+        phoneUserId: phoneUser._id,
+        runId,
+        inboundWebhookId: message.webhookId,
+        channel: message.channel,
+        body: message.prompt,
+        attachments: message.attachments,
+        createdAt: message.createdAt,
+      })
+      formattedInputs.push({
+        body: inserted.prompt,
+        imageUrls: inserted.imageUrls,
+      })
+    }
+
+    for (const message of pending) {
+      await ctx.db.patch(message._id, {
+        status: 'processed',
+        updatedAt: timestamp,
+      })
+    }
+
+    await ctx.db.patch(phoneUser._id, {
+      activeRunId: runId,
+      updatedAt: timestamp,
+    })
+
+    await addRunEvent(
+      ctx,
+      runId,
+      'queued',
+      messages.length === 1
+        ? 'Queued app-server turn'
+        : `Queued app-server turn with ${messages.length} buffered messages`,
+    )
+
+    const input = combineMessageInputs(formattedInputs)
+    return {
+      kind: 'start',
+      runId,
+      phoneUserId: phoneUser._id,
+      phoneNumber: phoneUser.phoneNumber,
+      sandboxName,
+      prompt: input.body,
+      imageUrls: input.imageUrls,
       browserUseProfileId: browserProfile.browserUseProfileId,
       codexThreadId: phoneUser.codexThreadId,
       conversationHistory: await getConversationHistory(ctx, phoneUser._id),

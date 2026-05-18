@@ -129,6 +129,37 @@ export default defineSchema({
     .index('by_conversationMessageId', ['conversationMessageId'])
     .index('by_inboundWebhookId', ['inboundWebhookId'])
     .index('by_runId', ['runId']),
+  inboundMessageBuffer: defineTable({
+    webhookId: v.string(),
+    phoneNumber: v.string(),
+    channel: v.union(v.literal('sms'), v.literal('mms'), v.literal('imessage')),
+    prompt: v.string(),
+    conversationId: v.optional(v.string()),
+    attachments: v.array(
+      v.object({
+        storageId: v.id('_storage'),
+        sourceUrl: v.optional(v.string()),
+        filename: v.optional(v.string()),
+        contentType: v.optional(v.string()),
+        size: v.optional(v.number()),
+        sha256: v.optional(v.string()),
+      }),
+    ),
+    status: v.union(
+      v.literal('pending'),
+      v.literal('processing'),
+      v.literal('processed'),
+    ),
+    processAfter: v.number(),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index('by_webhookId', ['webhookId'])
+    .index('by_phoneNumber_status_processAfter', [
+      'phoneNumber',
+      'status',
+      'processAfter',
+    ]),
   listings: defineTable({
     title: v.string(),
     description: v.string(),

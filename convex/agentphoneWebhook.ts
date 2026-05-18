@@ -16,6 +16,7 @@ import { gavelAgentInstructions } from './gavelAgentInstructions'
 const allowedMessageChannels = ['sms', 'mms', 'imessage'] as const
 
 const reserveSandboxNamePrefix = 'gavel-box'
+const inboundMessageDebounceMs = 2_000
 
 type AgentPhoneMessageChannel = (typeof allowedMessageChannels)[number]
 
@@ -203,6 +204,16 @@ type EnqueueAppServerAgentPhoneMessageResult =
       conversationHistory: ConversationMessage[]
     }
 
+type BufferAgentPhoneMessageResult =
+  | {
+      kind: 'duplicate'
+      runId?: string
+    }
+  | {
+      kind: 'buffered'
+      phoneNumber: string
+    }
+
 const enqueueAgentPhoneMessageRef = makeFunctionReference(
   'agentRuntime:enqueueAgentPhoneMessage',
 ) as unknown as FunctionReference<
@@ -219,8 +230,8 @@ const enqueueAgentPhoneMessageRef = makeFunctionReference(
   EnqueueAgentPhoneMessageResult
 >
 
-const enqueueAgentPhoneMessageForAppServerRef = makeFunctionReference(
-  'agentRuntime:enqueueAgentPhoneMessageForAppServer',
+const bufferAgentPhoneMessageForAppServerRef = makeFunctionReference(
+  'agentRuntime:bufferAgentPhoneMessageForAppServer',
 ) as unknown as FunctionReference<
   'mutation',
   'public',
@@ -231,6 +242,19 @@ const enqueueAgentPhoneMessageForAppServerRef = makeFunctionReference(
     prompt: string
     conversationId?: string
     attachments?: StoredWebhookAttachment[]
+    debounceMs: number
+  },
+  BufferAgentPhoneMessageResult
+>
+
+const enqueueBufferedAgentPhoneMessagesForAppServerRef = makeFunctionReference(
+  'agentRuntime:enqueueBufferedAgentPhoneMessagesForAppServer',
+) as unknown as FunctionReference<
+  'mutation',
+  'public',
+  {
+    phoneNumber: string
+    now: number
   },
   EnqueueAppServerAgentPhoneMessageResult
 >
@@ -437,6 +461,17 @@ const monitorAppServerTurnRef = makeFunctionReference(
     threadId: string
     turnId: string
     attempt: number
+  },
+  null
+>
+
+const processBufferedAgentPhoneMessagesRef = makeFunctionReference(
+  'agentphoneWebhook:processBufferedAgentPhoneMessages',
+) as unknown as FunctionReference<
+  'action',
+  'internal',
+  {
+    phoneNumber: string
   },
   null
 >
@@ -1372,14 +1407,23 @@ async function steerAppServerTurn(ctx: ActionCtx, input: AppServerSteerInput) {
     sandbox: runtime.sandbox,
     runId: input.runId,
   })
-  const bridgeResult = await runAppServerBridge(runtime.sandbox, {
-    mode: 'steer',
-    url: `ws://127.0.0.1:${appServerPort}`,
-    threadId: input.codexThreadId,
-    turnId: input.codexTurnId,
-    prompt: input.prompt,
-    imageUrls: input.imageUrls,
-  })
+  let bridgeResult: AppServerBridgeResult
+  try {
+    bridgeResult = await runAppServerBridge(runtime.sandbox, {
+      mode: 'steer',
+      url: `ws://127.0.0.1:${appServerPort}`,
+      threadId: input.codexThreadId,
+      turnId: input.codexTurnId,
+      prompt: input.prompt,
+      imageUrls: input.imageUrls,
+    })
+  } catch (err) {
+    await stopAppServerTurnKeepAlive({
+      sandbox: runtime.sandbox,
+      runId: input.runId,
+    })
+    throw err
+  }
 
   if (bridgeResult.kind !== 'steer') {
     throw new Error('app-server bridge did not steer the turn')
@@ -1395,6 +1439,116 @@ async function steerAppServerTurn(ctx: ActionCtx, input: AppServerSteerInput) {
     processName: appServerProcessName,
     threadId: input.codexThreadId,
     turnId: bridgeResult.turnId,
+  }
+}
+
+function isInactiveSteerError(err: unknown) {
+  const message = err instanceof Error ? err.message : String(err)
+  return message.includes('no active turn to steer')
+}
+
+async function steerOrStartAppServerTurn(
+  ctx: ActionCtx,
+  input: AppServerSteerInput,
+) {
+  try {
+    const steered = await steerAppServerTurn(ctx, input)
+    return {
+      status: 'steered' as const,
+      ...steered,
+    }
+  } catch (err) {
+    if (!isInactiveSteerError(err)) throw err
+  }
+
+  const started = await startAppServerTurn(ctx, {
+    runId: input.runId,
+    phoneNumber: input.phoneNumber,
+    sandboxName: input.sandboxName,
+    prompt: input.prompt,
+    imageUrls: input.imageUrls,
+    browserUseProfileId: input.browserUseProfileId,
+    codexThreadId: input.codexThreadId,
+    conversationHistory: input.conversationHistory,
+  })
+
+  return {
+    status: 'running' as const,
+    ...started,
+  }
+}
+
+async function startOrSteerAppServerRun(
+  ctx: ActionCtx,
+  input: {
+    enqueued: EnqueueAppServerAgentPhoneMessageResult
+    phoneNumber: string
+  },
+) {
+  const { enqueued, phoneNumber } = input
+
+  if (enqueued.kind === 'duplicate') {
+    return {
+      ok: true,
+      duplicate: true,
+      runId: enqueued.runId,
+      status: enqueued.status,
+    }
+  }
+
+  if (enqueued.kind === 'needs_profile') {
+    return {
+      ok: true,
+      status: 'needs_profile',
+      runId: enqueued.runId,
+    }
+  }
+
+  await scheduleReservePoolRefill(ctx)
+
+  if (enqueued.kind === 'steer') {
+    const handled = await steerOrStartAppServerTurn(ctx, {
+      runId: enqueued.runId,
+      phoneNumber,
+      sandboxName: enqueued.sandboxName,
+      prompt: enqueued.prompt,
+      imageUrls: enqueued.imageUrls,
+      browserUseProfileId: enqueued.browserUseProfileId,
+      codexThreadId: enqueued.codexThreadId,
+      codexTurnId: enqueued.codexTurnId,
+      conversationHistory: enqueued.conversationHistory,
+    })
+
+    return {
+      ok: true,
+      status: handled.status,
+      runId: enqueued.runId,
+      sandboxName: handled.sandboxName,
+      threadId: handled.threadId,
+      turnId: handled.turnId,
+    }
+  }
+
+  const started = await startAppServerTurn(ctx, {
+    runId: enqueued.runId,
+    phoneNumber,
+    sandboxName: enqueued.sandboxName,
+    prompt: enqueued.prompt,
+    imageUrls: enqueued.imageUrls,
+    browserUseProfileId: enqueued.browserUseProfileId,
+    codexThreadId: enqueued.codexThreadId,
+    conversationHistory: enqueued.conversationHistory,
+  })
+
+  return {
+    ok: true,
+    status: 'running',
+    runtime: 'app_server',
+    runId: enqueued.runId,
+    sandboxName: started.sandboxName,
+    processName: started.processName,
+    threadId: started.threadId,
+    turnId: started.turnId,
   }
 }
 
@@ -1740,7 +1894,7 @@ export const handleExternalAgentNotification = internalAction({
 
     try {
       if (enqueued.kind === 'steer') {
-        const steered = await steerAppServerTurn(ctx, {
+        const handled = await steerOrStartAppServerTurn(ctx, {
           runId: enqueued.runId,
           phoneNumber,
           sandboxName: enqueued.sandboxName,
@@ -1754,11 +1908,11 @@ export const handleExternalAgentNotification = internalAction({
 
         return json(200, {
           ok: true,
-          status: 'steered',
+          status: handled.status,
           runId: enqueued.runId,
-          sandboxName: steered.sandboxName,
-          threadId: steered.threadId,
-          turnId: steered.turnId,
+          sandboxName: handled.sandboxName,
+          threadId: handled.threadId,
+          turnId: handled.turnId,
         })
       }
 
@@ -1795,6 +1949,39 @@ export const handleExternalAgentNotification = internalAction({
         error: 'failed to process external notification',
       })
     }
+  },
+})
+
+export const processBufferedAgentPhoneMessages = internalAction({
+  args: {
+    phoneNumber: v.string(),
+  },
+  handler: async (ctx, args): Promise<null> => {
+    const enqueued = await ctx.runMutation(
+      enqueueBufferedAgentPhoneMessagesForAppServerRef,
+      {
+        phoneNumber: args.phoneNumber,
+        now: Date.now(),
+      },
+    )
+
+    try {
+      await startOrSteerAppServerRun(ctx, {
+        enqueued,
+        phoneNumber: args.phoneNumber,
+      })
+    } catch (err) {
+      if (enqueued.kind !== 'duplicate' && enqueued.kind !== 'needs_profile') {
+        await ctx.runMutation(markRunFailedRef, {
+          runId: enqueued.runId,
+          sandboxName:
+            enqueued.sandboxName ?? sandboxNameForPhone(args.phoneNumber),
+          error: err instanceof Error ? err.message : String(err),
+        })
+      }
+    }
+
+    return null
   },
 })
 
@@ -1850,8 +2037,8 @@ export const handleAgentPhoneWebhook = internalAction({
     const prompt = payload.data.message ?? ''
 
     if (process.env.CODEX_RUNTIME !== 'exec') {
-      const enqueued = await ctx.runMutation(
-        enqueueAgentPhoneMessageForAppServerRef,
+      const buffered = await ctx.runMutation(
+        bufferAgentPhoneMessageForAppServerRef,
         {
           webhookId: args.webhookId,
           phoneNumber,
@@ -1859,85 +2046,29 @@ export const handleAgentPhoneWebhook = internalAction({
           prompt,
           conversationId,
           attachments,
+          debounceMs: inboundMessageDebounceMs,
         },
       )
 
-      if (enqueued.kind === 'duplicate') {
+      if (buffered.kind === 'duplicate') {
         return json(200, {
           ok: true,
           duplicate: true,
-          runId: enqueued.runId,
-          status: enqueued.status,
+          runId: buffered.runId,
         })
       }
 
-      if (enqueued.kind === 'needs_profile') {
-        return json(200, {
-          ok: true,
-          status: 'needs_profile',
-          runId: enqueued.runId,
-        })
-      }
+      await ctx.scheduler.runAfter(
+        inboundMessageDebounceMs,
+        processBufferedAgentPhoneMessagesRef,
+        { phoneNumber: buffered.phoneNumber },
+      )
 
-      await scheduleReservePoolRefill(ctx)
-
-      try {
-        if (enqueued.kind === 'steer') {
-          const steered = await steerAppServerTurn(ctx, {
-            runId: enqueued.runId,
-            phoneNumber,
-            sandboxName: enqueued.sandboxName,
-            prompt: enqueued.prompt,
-            imageUrls: enqueued.imageUrls,
-            browserUseProfileId: enqueued.browserUseProfileId,
-            codexThreadId: enqueued.codexThreadId,
-            codexTurnId: enqueued.codexTurnId,
-            conversationHistory: enqueued.conversationHistory,
-          })
-
-          return json(200, {
-            ok: true,
-            status: 'steered',
-            runId: enqueued.runId,
-            sandboxName: steered.sandboxName,
-            threadId: steered.threadId,
-            turnId: steered.turnId,
-          })
-        }
-
-        const started = await startAppServerTurn(ctx, {
-          runId: enqueued.runId,
-          phoneNumber,
-          sandboxName: enqueued.sandboxName,
-          prompt: enqueued.prompt,
-          imageUrls: enqueued.imageUrls,
-          browserUseProfileId: enqueued.browserUseProfileId,
-          codexThreadId: enqueued.codexThreadId,
-          conversationHistory: enqueued.conversationHistory,
-        })
-
-        return json(200, {
-          ok: true,
-          status: 'running',
-          runtime: 'app_server',
-          runId: enqueued.runId,
-          sandboxName: started.sandboxName,
-          processName: started.processName,
-          threadId: started.threadId,
-          turnId: started.turnId,
-        })
-      } catch (err) {
-        await ctx.runMutation(markRunFailedRef, {
-          runId: enqueued.runId,
-          sandboxName: enqueued.sandboxName ?? sandboxNameForPhone(phoneNumber),
-          error: err instanceof Error ? err.message : String(err),
-        })
-
-        return json(500, {
-          ok: false,
-          error: 'failed to process app-server turn',
-        })
-      }
+      return json(200, {
+        ok: true,
+        status: 'buffered',
+        debounceMs: inboundMessageDebounceMs,
+      })
     }
 
     const enqueued = await ctx.runMutation(enqueueAgentPhoneMessageRef, {
