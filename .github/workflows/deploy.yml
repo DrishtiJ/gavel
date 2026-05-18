@@ -1,0 +1,77 @@
+name: Deploy
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-main
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      BLAXEL_WORKSPACE: thomaskiefer
+      CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version: '24'
+          cache: true
+
+      - name: Install dependencies
+        run: vp install --frozen-lockfile
+
+      - name: Install Blaxel CLI
+        run: |
+          export BINDIR="$HOME/.local/bin"
+          export BL_INSTALL_PATH=false
+          export BL_INSTALL_COMPLETION=false
+          curl -fsSL https://raw.githubusercontent.com/blaxel-ai/toolkit/main/install.sh | sh
+          echo "$BINDIR" >> "$GITHUB_PATH"
+
+      - name: Prepare deploy auth
+        env:
+          BL_CLIENT_CREDENTIALS_SECRET: ${{ secrets.BL_CLIENT_CREDENTIALS }}
+          BL_API_KEY_SECRET: ${{ secrets.BL_API_KEY }}
+        run: |
+          if [ -n "${BL_CLIENT_CREDENTIALS_SECRET:-}" ]; then
+            {
+              echo 'BL_CLIENT_CREDENTIALS<<EOF'
+              echo "$BL_CLIENT_CREDENTIALS_SECRET"
+              echo EOF
+            } >> "$GITHUB_ENV"
+          elif [ -n "${BL_API_KEY_SECRET:-}" ]; then
+            {
+              echo 'BL_API_KEY<<EOF'
+              echo "$BL_API_KEY_SECRET"
+              echo EOF
+            } >> "$GITHUB_ENV"
+          else
+            echo "::error::Set BL_CLIENT_CREDENTIALS or BL_API_KEY in repository secrets."
+            exit 1
+          fi
+
+          if [ -z "${CONVEX_DEPLOY_KEY:-}" ]; then
+            echo "::error::Set CONVEX_DEPLOY_KEY in repository secrets."
+            exit 1
+          fi
+
+      - name: Authenticate Blaxel
+        run: bl login "$BLAXEL_WORKSPACE"
+
+      - name: Check
+        run: vp check
+
+      - name: Test
+        run: vp test
+
+      - name: Deploy Blaxel and Convex
+        run: vpr deploy

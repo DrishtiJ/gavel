@@ -101,20 +101,27 @@ Deploy the app runtime. This builds the web app, pushes the Blaxel sandbox
 image, then deploys Convex:
 
 ```bash
-pnpm run deploy
+vpr deploy
 ```
 
 Push only the Blaxel sandbox image:
 
 ```bash
-pnpm run deploy:blaxel
+vpr deploy:blaxel
 ```
 
 Deploy only Convex changes:
 
 ```bash
-pnpm run deploy:convex
+vpr deploy:convex
 ```
+
+Pushes to `main` also run `.github/workflows/deploy.yml`, which runs the same
+`vpr deploy` flow after `vp check` and `vp test`. The workflow needs these
+repository secrets:
+
+- `CONVEX_DEPLOY_KEY`
+- `BL_CLIENT_CREDENTIALS` or `BL_API_KEY`
 
 ## Notes
 

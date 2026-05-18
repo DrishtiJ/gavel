@@ -6,9 +6,9 @@
   "scripts": {
     "dev": "convex dev --start 'vp dev'",
     "build": "vp build && tsc --noEmit",
-    "deploy": "vp build && pnpm run deploy:blaxel && pnpm run deploy:convex",
+    "deploy": "vpr build && vpr deploy:blaxel && vpr deploy:convex",
     "deploy:blaxel": "blaxel/codex-browsercode/push.sh",
-    "deploy:convex": "npx convex deploy --yes",
+    "deploy:convex": "vp exec convex deploy --yes",
     "start": "node .output/server/index.mjs",
     "format": "vp fmt .",
     "lint": "tsc && eslint .  --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
