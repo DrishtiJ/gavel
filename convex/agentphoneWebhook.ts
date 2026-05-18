@@ -15,7 +15,7 @@ import { gavelAgentInstructions } from './gavelAgentInstructions'
 
 const allowedMessageChannels = ['sms', 'mms', 'imessage'] as const
 
-const reserveSandboxNamePrefix = 'gavel-reserve'
+const reserveSandboxNamePrefix = 'gavel-box'
 
 type AgentPhoneMessageChannel = (typeof allowedMessageChannels)[number]
 
@@ -540,8 +540,7 @@ function bearerToken(authorization: string | null) {
 }
 
 function verifyExternalAgentSecret(secret: string | null) {
-  const expected =
-    process.env.AGENT_NOTIFY_SECRET ?? process.env.ADMIN_RESET_SECRET
+  const expected = process.env.AGENT_NOTIFY_SECRET
   if (!expected || !secret) return false
 
   const actualBuffer = Buffer.from(secret)
