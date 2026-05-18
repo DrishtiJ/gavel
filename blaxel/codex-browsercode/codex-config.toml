@@ -1,3 +1,7 @@
+model = "gpt-5.5"
+model_reasoning_effort = "medium"
+service_tier = "fast"
+
 [mcp_servers.browsercode]
 command = "/opt/gavel/plugins/browsercode/mcp/browsercode/run-mcp.sh"
 args = []

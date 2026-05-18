@@ -6,11 +6,13 @@ export type StartRemoteCodexRunInput = {
   runId: string
   phoneNumber: string
   prompt: string
+  imageUrls?: string[]
   browserUseProfileId: string
   codexThreadId?: string
   conversationHistory?: Array<{
     role: 'user' | 'agent' | 'system' | 'external'
     body: string
+    imageUrls?: string[]
     createdAt: number
   }>
 }
@@ -136,15 +138,23 @@ function buildRunPrompt(input: StartRemoteCodexRunInput) {
   const history = (input.conversationHistory ?? [])
     .map((message) => {
       const timestamp = new Date(message.createdAt).toISOString()
-      return `- ${timestamp} ${message.role}: ${message.body}`
+      const imageNote = message.imageUrls?.length
+        ? ` (${message.imageUrls.length} image input${
+            message.imageUrls.length === 1 ? '' : 's'
+          })`
+        : ''
+      return `- ${timestamp} ${message.role}${imageNote}: ${message.body}`
     })
     .join('\n')
+  const latestImageNote = input.imageUrls?.length
+    ? `\n\nAttached image inputs for latest message: ${input.imageUrls.length}`
+    : ''
 
   return `Runtime context for this Gavel phone conversation:
 
 - User phone number: ${input.phoneNumber}
 - Conversation continuity: this is one continuing conversation for this phone number. Use the same listing state, browser profile, and marketplace context from earlier turns.
-- Browser Use: BROWSER_USE_PROFILE_ID is configured in the runtime environment.
+- Browser Use remote browser: BROWSER_USE_PROFILE_ID is configured in the runtime environment. Use BrowserCode/browser_execute to create a Browser Use cloud browser and connect over CDP. Do not create or use Browser Use hosted Agent Sessions, Browser Use Agency, Browser Use tasks, or any Browser Use autonomous agent product.
 - Browser live preview URL: not provided for this turn.
 - Attachments: any available image/file URLs are included inline in the conversation history or latest user message as Convex file URLs with metadata.
 - Outbound media: if you need to send media, follow the AGENTS.md media marker format in your final answer.
@@ -153,6 +163,6 @@ Conversation history:
 ${history || '- No previous messages.'}
 
 Latest message or notification:
-${input.prompt}
+${input.prompt}${latestImageNote}
 `
 }

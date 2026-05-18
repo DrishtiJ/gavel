@@ -70,6 +70,7 @@ Failure modes:
 #### Way 3: provision and connect to a Browser Use cloud browser.
 
 Choose when the computer has no browser or to work in the background.
+This path creates a Browser Use cloud browser only. Do not use Browser Use hosted Agent Sessions, Browser Use Agency, Browser Use tasks, or any Browser Use autonomous agent product; the calling Codex agent must drive the browser directly over CDP.
 
 ```js
 // Provision and connect to a cloud browser
@@ -106,7 +107,6 @@ await fetch(`https://api.browser-use.com/api/v3/browsers/${id}`, {
 
 A cloud browser is a paid service and requires `BROWSER_USE_API_KEY` to be set in the environment.
 Browser Use cloud browsers auto-solve captchas. When you land on one, just stop driving and `await new Promise(r => setTimeout(r, 10000))`; the solver runs server-side and the page advances on its own.
-Browser Use has a free tier gated for intelligent and powerful agents. Unlimited free browsers and proxies, limited to 3 concurrent browsers. Agents can sign up and receive a key fully autonomously, but must pass a proof-of-agent-capability challenge. In can be done without any browser. To begin, post or webfetch https://browser-use.com and solve the challenge (see https://browser-use.com/llms.txt or POST https://api.browser-use.com/cloud/signup.).
 
 #### Way 4: user-preconfigured endpoint
 

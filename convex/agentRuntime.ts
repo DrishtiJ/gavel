@@ -27,6 +27,7 @@ const attachmentInput = v.object({
 type ConversationMessage = {
   role: 'user' | 'agent' | 'system' | 'external'
   body: string
+  imageUrls?: string[]
   createdAt: number
 }
 
@@ -40,6 +41,11 @@ type MessageAttachmentInput = {
 }
 
 type ConversationDirection = 'user' | 'agent' | 'system' | 'external'
+
+type FormattedMessageInput = {
+  body: string
+  imageUrls: string[]
+}
 
 type BrowserProfileResolution =
   | {
@@ -57,6 +63,7 @@ type StartableQueuedRun = {
   phoneNumber: string
   sandboxName?: string
   prompt: string
+  imageUrls?: string[]
   browserUseProfileId: string
   codexThreadId?: string
   conversationHistory: ConversationMessage[]
@@ -75,6 +82,7 @@ type StartableAppServerRun = {
   phoneNumber: string
   sandboxName?: string
   prompt: string
+  imageUrls?: string[]
   browserUseProfileId: string
   codexThreadId?: string
   conversationHistory: ConversationMessage[]
@@ -87,6 +95,7 @@ type SteerableAppServerRun = {
   phoneNumber: string
   sandboxName?: string
   prompt: string
+  imageUrls?: string[]
   browserUseProfileId: string
   codexThreadId: string
   codexTurnId: string
@@ -212,9 +221,12 @@ const getConversationHistory = async (
   const formattedMessages: ConversationMessage[] = []
   for (const message of orderedMessages) {
     const attachments = await getMessageAttachments(ctx, message._id)
+    const formatted = await formatMessageInput(ctx, message.body, attachments)
     formattedMessages.push({
       role: message.direction,
-      body: await formatMessageBody(ctx, message.body, attachments),
+      body: formatted.body,
+      imageUrls:
+        formatted.imageUrls.length > 0 ? formatted.imageUrls : undefined,
       createdAt: message.createdAt,
     })
   }
@@ -234,18 +246,26 @@ const getMessageAttachments = async (
     .collect()
 }
 
-const formatMessageBody = async (
+function isImageAttachment(attachment: MessageAttachmentInput) {
+  return /^(image\/(png|jpe?g|webp|gif))$/i.test(attachment.contentType ?? '')
+}
+
+const formatMessageInput = async (
   ctx: MutationCtx,
   body: string,
   attachments: MessageAttachmentInput[],
-) => {
+): Promise<FormattedMessageInput> => {
   const trimmedBody = body.trim()
-  if (attachments.length === 0) return trimmedBody
+  if (attachments.length === 0) return { body: trimmedBody, imageUrls: [] }
 
   const lines = [trimmedBody || '[no text]']
+  const imageUrls: string[] = []
   lines.push('Attachments available to the agent via Convex file URLs:')
   for (const [index, attachment] of attachments.entries()) {
     const url = await ctx.storage.getUrl(attachment.storageId)
+    if (url && isImageAttachment(attachment)) {
+      imageUrls.push(url)
+    }
     const details = [
       attachment.filename ? `name=${attachment.filename}` : null,
       attachment.contentType ? `contentType=${attachment.contentType}` : null,
@@ -260,7 +280,7 @@ const formatMessageBody = async (
       }${details ? `; ${details}` : ''}`,
     )
   }
-  return lines.join('\n')
+  return { body: lines.join('\n'), imageUrls }
 }
 
 const insertUserConversationMessage = async (
@@ -305,13 +325,19 @@ const insertUserConversationMessage = async (
     })
   }
 
+  const formatted = await formatMessageInput(ctx, input.body, input.attachments)
+
   return {
     conversationMessageId,
-    prompt: await formatMessageBody(ctx, input.body, input.attachments),
+    prompt: formatted.body,
+    imageUrls: formatted.imageUrls,
   }
 }
 
-const getPromptForRun = async (ctx: MutationCtx, runId: Id<'agentRuns'>) => {
+const getInputForRun = async (
+  ctx: MutationCtx,
+  runId: Id<'agentRuns'>,
+): Promise<FormattedMessageInput> => {
   const message = await ctx.db
     .query('conversationMessages')
     .withIndex('by_runId', (q) => q.eq('runId', runId))
@@ -325,11 +351,11 @@ const getPromptForRun = async (ctx: MutationCtx, runId: Id<'agentRuns'>) => {
     .first()
   if (!message) {
     const run = await ctx.db.get(runId)
-    return run?.prompt ?? ''
+    return { body: run?.prompt ?? '', imageUrls: [] }
   }
 
   const attachments = await getMessageAttachments(ctx, message._id)
-  return await formatMessageBody(ctx, message.body, attachments)
+  return await formatMessageInput(ctx, message.body, attachments)
 }
 
 const ensureSandboxAssignment = async (
@@ -426,11 +452,14 @@ const startNextQueuedRun = async (
     })
   }
 
+  const nextInput = await getInputForRun(ctx, nextRun._id)
+
   return {
     runId: nextRun._id,
     phoneNumber: phoneUser.phoneNumber,
     sandboxName,
-    prompt: await getPromptForRun(ctx, nextRun._id),
+    prompt: nextInput.body,
+    imageUrls: nextInput.imageUrls,
     browserUseProfileId: browserProfile.browserUseProfileId,
     codexThreadId: phoneUser.codexThreadId,
     conversationHistory: await getConversationHistory(ctx, phoneUserId),
@@ -576,6 +605,7 @@ export const enqueueAgentPhoneMessage = mutation({
       phoneNumber: phoneUser.phoneNumber,
       sandboxName,
       prompt: message.prompt,
+      imageUrls: message.imageUrls,
       browserUseProfileId: browserProfile?.browserUseProfileId,
       codexThreadId,
       conversationHistory: await getConversationHistory(ctx, phoneUser._id),
@@ -715,6 +745,7 @@ export const enqueueAgentPhoneMessageForAppServer = mutation({
         phoneNumber: phoneUser.phoneNumber,
         sandboxName: activeRun.sandboxName,
         prompt: message.prompt,
+        imageUrls: message.imageUrls,
         browserUseProfileId: browserProfile.browserUseProfileId,
         codexThreadId: activeRun.codexThreadId,
         codexTurnId: activeRun.codexTurnId,
@@ -786,6 +817,7 @@ export const enqueueAgentPhoneMessageForAppServer = mutation({
       phoneNumber: phoneUser.phoneNumber,
       sandboxName,
       prompt: message.prompt,
+      imageUrls: message.imageUrls,
       browserUseProfileId: browserProfile.browserUseProfileId,
       codexThreadId: phoneUser.codexThreadId,
       conversationHistory: await getConversationHistory(ctx, phoneUser._id),
@@ -926,6 +958,7 @@ export const enqueueExternalNotificationForAppServer = mutation({
         phoneNumber: phoneUser.phoneNumber,
         sandboxName: activeRun.sandboxName,
         prompt: message.prompt,
+        imageUrls: message.imageUrls,
         browserUseProfileId: browserProfile.browserUseProfileId,
         codexThreadId: activeRun.codexThreadId,
         codexTurnId: activeRun.codexTurnId,
@@ -997,6 +1030,7 @@ export const enqueueExternalNotificationForAppServer = mutation({
       phoneNumber: phoneUser.phoneNumber,
       sandboxName,
       prompt: message.prompt,
+      imageUrls: message.imageUrls,
       browserUseProfileId: browserProfile.browserUseProfileId,
       codexThreadId: phoneUser.codexThreadId,
       conversationHistory: await getConversationHistory(ctx, phoneUser._id),

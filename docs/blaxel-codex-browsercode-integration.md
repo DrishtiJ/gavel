@@ -188,6 +188,11 @@ Codex should open Browser Use cloud browsers with the user's
 `BROWSER_USE_PROFILE_ID`, drive the task, then explicitly stop the cloud browser
 so the profile is saved and paid browser time ends.
 
+Do not use Browser Use hosted Agent Sessions, Browser Use Agency, Browser Use
+tasks, or any Browser Use autonomous agent product. Browser Use is only the
+remote browser provider here; Codex is the sole agent and controls the browser
+through BrowserCode/CDP.
+
 ## First Implementation Slice
 
 1. Add `@blaxel/core`.

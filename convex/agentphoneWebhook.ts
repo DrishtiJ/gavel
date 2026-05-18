@@ -63,6 +63,7 @@ type StartRemoteCodexRunInput = {
   phoneNumber: string
   sandboxName?: string
   prompt: string
+  imageUrls?: string[]
   browserUseProfileId: string
   codexThreadId?: string
   conversationHistory: ConversationMessage[]
@@ -92,6 +93,7 @@ type RunProgressEvent = {
 type ConversationMessage = {
   role: 'user' | 'agent' | 'system' | 'external'
   body: string
+  imageUrls?: string[]
   createdAt: number
 }
 
@@ -100,6 +102,7 @@ type StartableQueuedRun = {
   phoneNumber: string
   sandboxName?: string
   prompt: string
+  imageUrls?: string[]
   browserUseProfileId: string
   codexThreadId?: string
   conversationHistory: ConversationMessage[]
@@ -116,6 +119,7 @@ type AppServerRunInput = {
   phoneNumber: string
   sandboxName?: string
   prompt: string
+  imageUrls?: string[]
   browserUseProfileId: string
   codexThreadId?: string
   conversationHistory: ConversationMessage[]
@@ -139,6 +143,7 @@ type EnqueueAgentPhoneMessageResult =
       phoneNumber: string
       sandboxName?: string
       prompt: string
+      imageUrls?: string[]
       browserUseProfileId?: string
       codexThreadId?: string
       conversationHistory: ConversationMessage[]
@@ -151,6 +156,7 @@ type EnqueueAgentPhoneMessageResult =
       phoneNumber: string
       sandboxName?: string
       prompt: string
+      imageUrls?: string[]
       browserUseProfileId?: string
       codexThreadId?: string
       conversationHistory: ConversationMessage[]
@@ -178,6 +184,7 @@ type EnqueueAppServerAgentPhoneMessageResult =
       phoneNumber: string
       sandboxName?: string
       prompt: string
+      imageUrls?: string[]
       browserUseProfileId: string
       codexThreadId?: string
       conversationHistory: ConversationMessage[]
@@ -189,6 +196,7 @@ type EnqueueAppServerAgentPhoneMessageResult =
       phoneNumber: string
       sandboxName?: string
       prompt: string
+      imageUrls?: string[]
       browserUseProfileId: string
       codexThreadId: string
       codexTurnId: string
@@ -833,6 +841,16 @@ function textInput(text) {
   return [{ type: "text", text }];
 }
 
+function userInput(text, imageUrls) {
+  const items = textInput(text);
+  for (const url of Array.isArray(imageUrls) ? imageUrls : []) {
+    if (typeof url === "string" && /^https?:\/\//i.test(url)) {
+      items.push({ type: "image", url });
+    }
+  }
+  return items;
+}
+
 function firstString(...values) {
   for (const value of values) {
     if (typeof value === "string" && value.length > 0) return value;
@@ -913,7 +931,7 @@ try {
 
     const turnStarted = await request(ws, "turn/start", {
       threadId,
-      input: textInput(input.prompt),
+      input: userInput(input.prompt, input.imageUrls),
       cwd: input.cwd,
       approvalPolicy: "never",
       sandboxPolicy: { type: "dangerFullAccess" }
@@ -926,7 +944,7 @@ try {
     const steered = await request(ws, "turn/steer", {
       threadId: input.threadId,
       expectedTurnId: input.turnId,
-      input: textInput(input.prompt)
+      input: userInput(input.prompt, input.imageUrls)
     });
     const turnId = firstString(steered?.turnId, input.turnId);
     console.log(JSON.stringify({ kind: "steer", turnId }));
@@ -1119,14 +1137,31 @@ function parseOutboundReply(text: string | undefined) {
   )
 
   return {
-    body: body
-      .split('\n')
-      .map((line) => line.trimEnd())
-      .filter((line, index, lines) => line || lines[index - 1])
-      .join('\n')
-      .trim(),
+    body: formatPhoneText(body),
     mediaUrls: [...new Set(mediaUrls)],
   }
+}
+
+function formatPhoneText(text: string) {
+  let body = text
+
+  body = body.replace(/```[\s\S]*?```/g, (match) =>
+    match.replace(/^```[^\n]*\n?|\n?```$/g, ''),
+  )
+  body = body.replace(/`([^`\n]+)`/g, '$1')
+  body = body.replace(/!\[([^\]]*)]\((https?:\/\/[^)\s]+)\)/g, '$1 $2')
+  body = body.replace(/\[([^\]]+)]\((https?:\/\/[^)\s]+)\)/g, '$1: $2')
+  body = body.replace(/(^|\s)([*_]{1,3})([^*_]+?)\2(?=\s|[.,!?;:]|$)/g, '$1$3')
+  body = body.replace(/^#{1,6}\s+/gm, '')
+  body = body.replace(/^\s*>\s?/gm, '')
+  body = body.replace(/^\s*[-*]\s+/gm, '- ')
+
+  return body
+    .split('\n')
+    .map((line) => line.trimEnd())
+    .filter((line, index, lines) => line || lines[index - 1])
+    .join('\n')
+    .trim()
 }
 
 async function sendAgentPhoneReply(input: {
@@ -1268,6 +1303,7 @@ async function startAppServerTurn(ctx: ActionCtx, input: AppServerRunInput) {
       cwd: '/workspace/gavel-agent',
       threadId: input.codexThreadId,
       prompt: buildRunPrompt(input),
+      imageUrls: input.imageUrls,
     })
 
     if (bridgeResult.kind !== 'start') {
@@ -1317,6 +1353,7 @@ async function steerAppServerTurn(ctx: ActionCtx, input: AppServerSteerInput) {
     threadId: input.codexThreadId,
     turnId: input.codexTurnId,
     prompt: input.prompt,
+    imageUrls: input.imageUrls,
   })
 
   if (bridgeResult.kind !== 'steer') {
@@ -1556,15 +1593,23 @@ function buildRunPrompt(input: StartRemoteCodexRunInput) {
   const history = input.conversationHistory
     .map((message) => {
       const timestamp = new Date(message.createdAt).toISOString()
-      return `- ${timestamp} ${message.role}: ${message.body}`
+      const imageNote = message.imageUrls?.length
+        ? ` (${message.imageUrls.length} image input${
+            message.imageUrls.length === 1 ? '' : 's'
+          })`
+        : ''
+      return `- ${timestamp} ${message.role}${imageNote}: ${message.body}`
     })
     .join('\n')
+  const latestImageNote = input.imageUrls?.length
+    ? `\n\nAttached image inputs for latest message: ${input.imageUrls.length}`
+    : ''
 
   return `Runtime context for this Gavel phone conversation:
 
 - User phone number: ${input.phoneNumber}
 - Conversation continuity: this is one continuing conversation for this phone number. Use the same listing state, browser profile, and marketplace context from earlier turns.
-- Browser Use: BROWSER_USE_PROFILE_ID is configured in the runtime environment.
+- Browser Use remote browser: BROWSER_USE_PROFILE_ID is configured in the runtime environment. Use BrowserCode/browser_execute to create a Browser Use cloud browser and connect over CDP. Do not create or use Browser Use hosted Agent Sessions, Browser Use Agency, Browser Use tasks, or any Browser Use autonomous agent product.
 - Browser live preview URL: not provided for this turn.
 - Attachments: any available image/file URLs are included inline in the conversation history or latest user message as Convex file URLs with metadata.
 - Outbound media: if you need to send media, follow the AGENTS.md media marker format in your final answer.
@@ -1573,7 +1618,7 @@ Conversation history:
 ${history || '- No previous messages.'}
 
 Latest message or notification:
-${input.prompt}
+${input.prompt}${latestImageNote}
 `
 }
 
@@ -1656,6 +1701,7 @@ export const handleExternalAgentNotification = internalAction({
           phoneNumber,
           sandboxName: enqueued.sandboxName,
           prompt: enqueued.prompt,
+          imageUrls: enqueued.imageUrls,
           browserUseProfileId: enqueued.browserUseProfileId,
           codexThreadId: enqueued.codexThreadId,
           codexTurnId: enqueued.codexTurnId,
@@ -1677,6 +1723,7 @@ export const handleExternalAgentNotification = internalAction({
         phoneNumber,
         sandboxName: enqueued.sandboxName,
         prompt: enqueued.prompt,
+        imageUrls: enqueued.imageUrls,
         browserUseProfileId: enqueued.browserUseProfileId,
         codexThreadId: enqueued.codexThreadId,
         conversationHistory: enqueued.conversationHistory,
@@ -1797,6 +1844,7 @@ export const handleAgentPhoneWebhook = internalAction({
             phoneNumber,
             sandboxName: enqueued.sandboxName,
             prompt: enqueued.prompt,
+            imageUrls: enqueued.imageUrls,
             browserUseProfileId: enqueued.browserUseProfileId,
             codexThreadId: enqueued.codexThreadId,
             codexTurnId: enqueued.codexTurnId,
@@ -1818,6 +1866,7 @@ export const handleAgentPhoneWebhook = internalAction({
           phoneNumber,
           sandboxName: enqueued.sandboxName,
           prompt: enqueued.prompt,
+          imageUrls: enqueued.imageUrls,
           browserUseProfileId: enqueued.browserUseProfileId,
           codexThreadId: enqueued.codexThreadId,
           conversationHistory: enqueued.conversationHistory,
@@ -1895,6 +1944,7 @@ export const handleAgentPhoneWebhook = internalAction({
         phoneNumber,
         sandboxName,
         prompt: enqueued.prompt,
+        imageUrls: enqueued.imageUrls,
         browserUseProfileId,
         codexThreadId: enqueued.codexThreadId,
         conversationHistory: enqueued.conversationHistory,
