@@ -1,13 +1,21 @@
 'use node'
 
-import { createHash, createHmac, timingSafeEqual } from 'node:crypto'
+import {
+  createHash,
+  createHmac,
+  randomUUID,
+  timingSafeEqual,
+} from 'node:crypto'
 import { SandboxInstance } from '@blaxel/core'
 import { makeFunctionReference, type FunctionReference } from 'convex/server'
 import { v } from 'convex/values'
 import { internalAction } from './_generated/server'
 import type { ActionCtx } from './_generated/server'
+import { gavelAgentInstructions } from './gavelAgentInstructions'
 
 const allowedMessageChannels = ['sms', 'mms', 'imessage'] as const
+
+const reserveSandboxNamePrefix = 'gavel-reserve'
 
 type AgentPhoneMessageChannel = (typeof allowedMessageChannels)[number]
 
@@ -22,14 +30,38 @@ type AgentPhoneWebhookPayload = {
     to?: string
     message?: string
     mediaUrl?: string | null
+    mediaUrls?: string[]
+    attachments?: AgentPhoneMediaItem[]
+    media?: AgentPhoneMediaItem[]
     direction?: string
     receivedAt?: string
   }
 }
 
+type AgentPhoneMediaItem = {
+  url?: string | null
+  mediaUrl?: string | null
+  downloadUrl?: string | null
+  contentType?: string | null
+  mimeType?: string | null
+  filename?: string | null
+  fileName?: string | null
+  name?: string | null
+}
+
+type StoredWebhookAttachment = {
+  storageId: string
+  sourceUrl?: string
+  filename?: string
+  contentType?: string
+  size?: number
+  sha256?: string
+}
+
 type StartRemoteCodexRunInput = {
   runId: string
   phoneNumber: string
+  sandboxName?: string
   prompt: string
   browserUseProfileId: string
   codexThreadId?: string
@@ -41,13 +73,24 @@ type WebhookActionResult = {
   body: Record<string, unknown>
 }
 
+type ExternalAgentNotificationPayload = {
+  phoneNumber?: string
+  recipientPhoneNumber?: string
+  message?: string
+  source?: string
+  channel?: string
+  conversationId?: string
+  notificationId?: string
+  idempotencyKey?: string
+}
+
 type RunProgressEvent = {
   type: string
   message: string
 }
 
 type ConversationMessage = {
-  role: 'user' | 'agent' | 'system'
+  role: 'user' | 'agent' | 'system' | 'external'
   body: string
   createdAt: number
 }
@@ -55,6 +98,7 @@ type ConversationMessage = {
 type StartableQueuedRun = {
   runId: string
   phoneNumber: string
+  sandboxName?: string
   prompt: string
   browserUseProfileId: string
   codexThreadId?: string
@@ -70,6 +114,7 @@ type InterruptedRun = {
 type AppServerRunInput = {
   runId: string
   phoneNumber: string
+  sandboxName?: string
   prompt: string
   browserUseProfileId: string
   codexThreadId?: string
@@ -92,6 +137,7 @@ type EnqueueAgentPhoneMessageResult =
       runId: string
       phoneUserId: string
       phoneNumber: string
+      sandboxName?: string
       prompt: string
       browserUseProfileId?: string
       codexThreadId?: string
@@ -103,6 +149,7 @@ type EnqueueAgentPhoneMessageResult =
       runId: string
       phoneUserId: string
       phoneNumber: string
+      sandboxName?: string
       prompt: string
       browserUseProfileId?: string
       codexThreadId?: string
@@ -121,6 +168,7 @@ type EnqueueAppServerAgentPhoneMessageResult =
       runId: string
       phoneUserId: string
       phoneNumber: string
+      sandboxName?: string
       prompt: string
     }
   | {
@@ -128,6 +176,7 @@ type EnqueueAppServerAgentPhoneMessageResult =
       runId: string
       phoneUserId: string
       phoneNumber: string
+      sandboxName?: string
       prompt: string
       browserUseProfileId: string
       codexThreadId?: string
@@ -138,6 +187,7 @@ type EnqueueAppServerAgentPhoneMessageResult =
       runId: string
       phoneUserId: string
       phoneNumber: string
+      sandboxName?: string
       prompt: string
       browserUseProfileId: string
       codexThreadId: string
@@ -156,6 +206,7 @@ const enqueueAgentPhoneMessageRef = makeFunctionReference(
     channel: AgentPhoneMessageChannel
     prompt: string
     conversationId?: string
+    attachments?: StoredWebhookAttachment[]
   },
   EnqueueAgentPhoneMessageResult
 >
@@ -170,6 +221,23 @@ const enqueueAgentPhoneMessageForAppServerRef = makeFunctionReference(
     phoneNumber: string
     channel: AgentPhoneMessageChannel
     prompt: string
+    conversationId?: string
+    attachments?: StoredWebhookAttachment[]
+  },
+  EnqueueAppServerAgentPhoneMessageResult
+>
+
+const enqueueExternalNotificationForAppServerRef = makeFunctionReference(
+  'agentRuntime:enqueueExternalNotificationForAppServer',
+) as unknown as FunctionReference<
+  'mutation',
+  'public',
+  {
+    notificationId: string
+    phoneNumber: string
+    message: string
+    source?: string
+    channel?: AgentPhoneMessageChannel
     conversationId?: string
   },
   EnqueueAppServerAgentPhoneMessageResult
@@ -238,6 +306,40 @@ const markAppServerTurnCompletedRef = makeFunctionReference(
   {
     runId: string
     processStatus?: string
+    agentReplyText?: string
+    agentReplyItemId?: string
+    agentReplyMediaUrls?: string[]
+  },
+  {
+    runId: string
+    phoneNumber?: string
+    replyText: string
+    mediaUrls?: string[]
+    channel: AgentPhoneMessageChannel
+  } | null
+>
+
+const markAgentPhoneReplySentRef = makeFunctionReference(
+  'agentRuntime:markAgentPhoneReplySent',
+) as unknown as FunctionReference<
+  'mutation',
+  'public',
+  {
+    runId: string
+    agentPhoneMessageId?: string
+    agentPhoneMessageIds?: string[]
+  },
+  null
+>
+
+const markAgentPhoneReplyFailedRef = makeFunctionReference(
+  'agentRuntime:markAgentPhoneReplyFailed',
+) as unknown as FunctionReference<
+  'mutation',
+  'public',
+  {
+    runId: string
+    error: string
   },
   null
 >
@@ -331,6 +433,52 @@ const monitorAppServerTurnRef = makeFunctionReference(
   null
 >
 
+const maintainSandboxReservePoolRef = makeFunctionReference(
+  'agentphoneWebhook:maintainSandboxReservePool',
+) as unknown as FunctionReference<
+  'action',
+  'internal',
+  Record<string, never>,
+  null
+>
+
+const planSandboxReserveCreationRef = makeFunctionReference(
+  'agentRuntime:planSandboxReserveCreation',
+) as unknown as FunctionReference<
+  'mutation',
+  'internal',
+  {
+    target: number
+    image: string
+    region?: string
+    candidateSandboxNames: string[]
+  },
+  string[]
+>
+
+const markReserveSandboxReadyRef = makeFunctionReference(
+  'agentRuntime:markReserveSandboxReady',
+) as unknown as FunctionReference<
+  'mutation',
+  'internal',
+  {
+    sandboxName: string
+  },
+  null
+>
+
+const markReserveSandboxErrorRef = makeFunctionReference(
+  'agentRuntime:markReserveSandboxError',
+) as unknown as FunctionReference<
+  'mutation',
+  'internal',
+  {
+    sandboxName: string
+    error: string
+  },
+  null
+>
+
 const shellQuote = (value: string) => `'${value.replaceAll("'", "'\\''")}'`
 
 const json = (
@@ -378,6 +526,130 @@ function normalizeAgentPhoneNumber(phoneNumber: string | undefined) {
   return normalized
 }
 
+function bearerToken(authorization: string | null) {
+  const match = authorization?.match(/^Bearer\s+(.+)$/i)
+  return match?.[1]?.trim() ?? null
+}
+
+function verifyExternalAgentSecret(secret: string | null) {
+  const expected =
+    process.env.AGENT_NOTIFY_SECRET ?? process.env.ADMIN_RESET_SECRET
+  if (!expected || !secret) return false
+
+  const actualBuffer = Buffer.from(secret)
+  const expectedBuffer = Buffer.from(expected)
+  if (actualBuffer.length !== expectedBuffer.length) return false
+
+  return timingSafeEqual(actualBuffer, expectedBuffer)
+}
+
+function parseOptionalChannel(channel: string | undefined) {
+  return allowedMessageChannels.find((value) => value === channel)
+}
+
+function firstString(...values: Array<string | null | undefined>) {
+  for (const value of values) {
+    if (typeof value === 'string' && value.trim()) return value.trim()
+  }
+  return undefined
+}
+
+function extractMediaItems(payload: AgentPhoneWebhookPayload) {
+  const items: AgentPhoneMediaItem[] = []
+  const data = payload.data
+  if (!data) return items
+
+  if (typeof data.mediaUrl === 'string' && data.mediaUrl.trim()) {
+    items.push({ url: data.mediaUrl })
+  }
+  for (const mediaUrl of data.mediaUrls ?? []) {
+    if (typeof mediaUrl === 'string' && mediaUrl.trim()) {
+      items.push({ url: mediaUrl })
+    }
+  }
+  for (const attachment of data.attachments ?? []) {
+    items.push(attachment)
+  }
+  for (const media of data.media ?? []) {
+    items.push(media)
+  }
+
+  const seen = new Set<string>()
+  return items.filter((item) => {
+    const url = firstString(item.url, item.mediaUrl, item.downloadUrl)
+    if (!url || seen.has(url)) return false
+    seen.add(url)
+    return true
+  })
+}
+
+function filenameFromHeadersOrUrl(response: Response, url: string) {
+  const disposition = response.headers.get('content-disposition')
+  const headerMatch = disposition?.match(
+    /filename\*?=(?:UTF-8'')?"?([^";]+)"?/i,
+  )
+  if (headerMatch?.[1]) return decodeURIComponent(headerMatch[1])
+
+  try {
+    const pathname = new URL(url).pathname
+    const filename = pathname.split('/').filter(Boolean).at(-1)
+    return filename ? decodeURIComponent(filename) : undefined
+  } catch {
+    return undefined
+  }
+}
+
+async function fetchMedia(url: string) {
+  let response = await fetch(url)
+  if (
+    (response.status === 401 || response.status === 403) &&
+    process.env.AGENTPHONE_API_KEY
+  ) {
+    response = await fetch(url, {
+      headers: { authorization: `Bearer ${process.env.AGENTPHONE_API_KEY}` },
+    })
+  }
+  if (!response.ok) {
+    throw new Error(`failed to fetch attachment ${response.status}`)
+  }
+  return response
+}
+
+async function storeWebhookAttachments(
+  ctx: ActionCtx,
+  payload: AgentPhoneWebhookPayload,
+) {
+  const stored: StoredWebhookAttachment[] = []
+  for (const item of extractMediaItems(payload)) {
+    const sourceUrl = firstString(item.url, item.mediaUrl, item.downloadUrl)
+    if (!sourceUrl) continue
+
+    const response = await fetchMedia(sourceUrl)
+    const arrayBuffer = await response.arrayBuffer()
+    const bytes = Buffer.from(arrayBuffer)
+    const contentType =
+      firstString(item.contentType, item.mimeType) ??
+      response.headers.get('content-type') ??
+      'application/octet-stream'
+    const filename =
+      firstString(item.filename, item.fileName, item.name) ??
+      filenameFromHeadersOrUrl(response, sourceUrl)
+    const storageId = await ctx.storage.store(
+      new Blob([arrayBuffer], { type: contentType }),
+    )
+
+    stored.push({
+      storageId,
+      sourceUrl,
+      filename,
+      contentType,
+      size: bytes.byteLength,
+      sha256: createHash('sha256').update(bytes).digest('hex'),
+    })
+  }
+  return stored
+}
+
 function isSupportedMessageWebhook(
   payload: AgentPhoneWebhookPayload,
 ): payload is AgentPhoneWebhookPayload & {
@@ -385,22 +657,36 @@ function isSupportedMessageWebhook(
   channel: AgentPhoneMessageChannel
   data: NonNullable<AgentPhoneWebhookPayload['data']> & {
     from: string
-    message: string
+    message?: string
   }
 } {
+  const mediaItems = extractMediaItems(payload)
   return (
     payload.event === 'agent.message' &&
     allowedMessageChannels.includes(
       payload.channel as AgentPhoneMessageChannel,
     ) &&
     typeof payload.data?.from === 'string' &&
-    typeof payload.data.message === 'string'
+    (typeof payload.data.message === 'string' || mediaItems.length > 0)
   )
 }
 
 function sandboxNameForPhone(phoneNumber: string) {
   const digest = createHash('sha256').update(phoneNumber).digest('hex')
   return `gavel-user-${digest.slice(0, 24)}`
+}
+
+function reservePoolTarget() {
+  const configured = Number.parseInt(
+    process.env.BLAXEL_SANDBOX_RESERVE_TARGET ?? '2',
+    10,
+  )
+  if (!Number.isFinite(configured) || configured < 0) return 2
+  return Math.min(configured, 10)
+}
+
+async function scheduleReservePoolRefill(ctx: ActionCtx) {
+  await ctx.scheduler.runAfter(0, maintainSandboxReservePoolRef, {})
 }
 
 const terminalProcessStatuses = new Set([
@@ -480,6 +766,16 @@ function eventsFromNewLogs(logs: string, offset: number) {
 const appServerPort = 4500
 const appServerProcessName = 'codex-app-server'
 const appServerBridgePath = '/workspace/gavel-runtime/app-server-bridge.mjs'
+const gavelAgentInstructionsPath = '/workspace/gavel-agent/AGENTS.md'
+
+function appServerTurnKeepAliveProcessName(runId: string) {
+  const digest = createHash('sha256').update(runId).digest('hex').slice(0, 16)
+  return `app-server-turn-keepalive-${digest}`
+}
+
+async function installGavelAgentInstructions(sandbox: SandboxInstance) {
+  await sandbox.fs.write(gavelAgentInstructionsPath, gavelAgentInstructions)
+}
 
 type AppServerBridgeStartResult = {
   kind: 'start'
@@ -496,6 +792,8 @@ type AppServerBridgeReadResult = {
   kind: 'read'
   threadStatusType?: string
   turnStatus?: string
+  agentReplyItemId?: string
+  agentReplyText?: string
 }
 
 type AppServerBridgeResult =
@@ -540,6 +838,18 @@ function firstString(...values) {
     if (typeof value === "string" && value.length > 0) return value;
   }
   return undefined;
+}
+
+function getAgentReply(turn) {
+  const items = Array.isArray(turn?.items) ? turn.items : [];
+  const agentMessages = items.filter((item) => item?.type === "agentMessage" && typeof item.text === "string" && item.text.trim());
+  const finalMessage = [...agentMessages].reverse().find((item) => item.phase === "final_answer");
+  const message = finalMessage ?? agentMessages.at(-1);
+  if (!message) return {};
+  return {
+    agentReplyItemId: firstString(message.id),
+    agentReplyText: message.text.trim()
+  };
 }
 
 const ws = new WebSocket(input.url);
@@ -589,14 +899,12 @@ try {
     if (threadId) {
       const resumed = await request(ws, "thread/resume", {
         threadId,
-        cwd: input.cwd,
-        sandbox: "danger-full-access"
+        cwd: input.cwd
       });
       threadId = firstString(resumed?.thread?.id, resumed?.id, threadId);
     } else {
       const started = await request(ws, "thread/start", {
-        cwd: input.cwd,
-        sandbox: "danger-full-access"
+        cwd: input.cwd
       });
       threadId = firstString(started?.thread?.id, started?.id);
     }
@@ -608,7 +916,7 @@ try {
       input: textInput(input.prompt),
       cwd: input.cwd,
       approvalPolicy: "never",
-      sandboxPolicy: "danger-full-access"
+      sandboxPolicy: { type: "dangerFullAccess" }
     });
     const turnId = firstString(turnStarted?.turn?.id, turnStarted?.id);
     if (!turnId) fail("app-server did not return a turn id");
@@ -630,10 +938,12 @@ try {
     const thread = read?.thread ?? read;
     const turns = Array.isArray(thread?.turns) ? thread.turns : [];
     const turn = turns.find((candidate) => candidate?.id === input.turnId) ?? turns.at(-1);
+    const agentReply = getAgentReply(turn);
     console.log(JSON.stringify({
       kind: "read",
       threadStatusType: thread?.status?.type,
-      turnStatus: turn?.status
+      turnStatus: turn?.status,
+      ...agentReply
     }));
   } else {
     fail("unknown bridge mode");
@@ -669,6 +979,8 @@ async function ensureCodexAppServer(input: {
   sandbox: SandboxInstance
   browserUseProfileId: string
 }) {
+  await installGavelAgentInstructions(input.sandbox)
+
   let needsStart = true
   try {
     const existing = await input.sandbox.process.get(appServerProcessName)
@@ -692,7 +1004,6 @@ async function ensureCodexAppServer(input: {
       command: `sh -lc ${shellQuote(command)}`,
       workingDir: '/workspace/gavel-agent',
       waitForCompletion: false,
-      keepAlive: true,
       timeout: 0,
       env: codexRuntimeEnv(input.browserUseProfileId),
     })
@@ -749,6 +1060,140 @@ async function runAppServerBridge(
   return parsed
 }
 
+async function startAppServerTurnKeepAlive(input: {
+  sandbox: SandboxInstance
+  runId: string
+}) {
+  const processName = appServerTurnKeepAliveProcessName(input.runId)
+
+  try {
+    const existing = await input.sandbox.process.get(processName)
+    if (existing.status === 'running') return processName
+  } catch {
+    // Start a fresh per-turn keep-alive below.
+  }
+
+  await input.sandbox.process.exec({
+    name: processName,
+    command: 'sleep infinity',
+    workingDir: '/workspace/gavel-agent',
+    waitForCompletion: false,
+    keepAlive: true,
+    timeout: 0,
+  })
+
+  return processName
+}
+
+async function stopAppServerTurnKeepAlive(input: {
+  sandbox: SandboxInstance
+  runId: string
+}) {
+  try {
+    await input.sandbox.process.kill(
+      appServerTurnKeepAliveProcessName(input.runId),
+    )
+  } catch {
+    // The keep-alive may already have exited or been cleaned up.
+  }
+}
+
+function parseOutboundReply(text: string | undefined) {
+  let body = text?.trim() ?? ''
+  const mediaUrls: string[] = []
+
+  body = body.replace(
+    /!\[[^\]]*]\((https?:\/\/[^)\s]+)\)/g,
+    (_match, url: string) => {
+      mediaUrls.push(url)
+      return ''
+    },
+  )
+
+  body = body.replace(
+    /^\s*\[media:\s*(https?:\/\/[^\]\s]+)\]\s*$/gim,
+    (_match, url: string) => {
+      mediaUrls.push(url)
+      return ''
+    },
+  )
+
+  return {
+    body: body
+      .split('\n')
+      .map((line) => line.trimEnd())
+      .filter((line, index, lines) => line || lines[index - 1])
+      .join('\n')
+      .trim(),
+    mediaUrls: [...new Set(mediaUrls)],
+  }
+}
+
+async function sendAgentPhoneReply(input: {
+  toNumber: string
+  body: string
+  mediaUrl?: string
+}) {
+  const apiKey = process.env.AGENTPHONE_API_KEY
+  const agentId = process.env.AGENTPHONE_AGENT_ID
+  if (!apiKey) throw new Error('AGENTPHONE_API_KEY is not set')
+  if (!agentId) throw new Error('AGENTPHONE_AGENT_ID is not set')
+
+  const requestBody: {
+    agent_id: string
+    to_number: string
+    body: string
+    media_url?: string
+    number_id?: string
+  } = {
+    agent_id: agentId,
+    to_number: input.toNumber,
+    body: input.body,
+  }
+  if (input.mediaUrl) {
+    requestBody.media_url = input.mediaUrl
+  }
+  if (process.env.AGENTPHONE_NUMBER_ID) {
+    requestBody.number_id = process.env.AGENTPHONE_NUMBER_ID
+  }
+
+  const response = await fetch('https://api.agentphone.ai/v1/messages', {
+    method: 'POST',
+    headers: {
+      authorization: `Bearer ${apiKey}`,
+      'content-type': 'application/json',
+    },
+    body: JSON.stringify(requestBody),
+  })
+
+  const responseText = await response.text()
+  let responseBody: unknown = null
+  try {
+    responseBody = responseText ? JSON.parse(responseText) : null
+  } catch {
+    responseBody = responseText
+  }
+
+  if (!response.ok) {
+    throw new Error(
+      `AgentPhone send failed with ${response.status}: ${responseText}`,
+    )
+  }
+
+  const data =
+    responseBody && typeof responseBody === 'object' && 'data' in responseBody
+      ? (responseBody as { data?: unknown }).data
+      : responseBody
+  const messageId =
+    data && typeof data === 'object' && 'id' in data
+      ? (data as { id?: unknown }).id
+      : null
+
+  return {
+    agentPhoneMessageId: typeof messageId === 'string' ? messageId : undefined,
+  }
+}
+
 async function ensureAppServerSandbox(input: AppServerRunInput) {
   const image = process.env.BLAXEL_CODEX_BROWSERCODE_IMAGE
   if (!image) throw new Error('BLAXEL_CODEX_BROWSERCODE_IMAGE is not set')
@@ -765,7 +1210,8 @@ async function ensureAppServerSandbox(input: AppServerRunInput) {
     throw new Error('BROWSER_USE_API_KEY is not set')
   }
 
-  const sandboxName = sandboxNameForPhone(input.phoneNumber)
+  const sandboxName =
+    input.sandboxName ?? sandboxNameForPhone(input.phoneNumber)
   const region = process.env.BL_REGION
   const sandbox = await SandboxInstance.createIfNotExists({
     name: sandboxName,
@@ -788,7 +1234,8 @@ async function ensureAppServerSandbox(input: AppServerRunInput) {
 }
 
 async function startAppServerTurn(ctx: ActionCtx, input: AppServerRunInput) {
-  const sandboxName = sandboxNameForPhone(input.phoneNumber)
+  const sandboxName =
+    input.sandboxName ?? sandboxNameForPhone(input.phoneNumber)
   const image = process.env.BLAXEL_CODEX_BROWSERCODE_IMAGE
   if (!image) {
     await ctx.runMutation(markRunFailedRef, {
@@ -808,16 +1255,30 @@ async function startAppServerTurn(ctx: ActionCtx, input: AppServerRunInput) {
   })
 
   const runtime = await ensureAppServerSandbox(input)
-  const bridgeResult = await runAppServerBridge(runtime.sandbox, {
-    mode: 'start',
-    url: `ws://127.0.0.1:${appServerPort}`,
-    cwd: '/workspace/gavel-agent',
-    threadId: input.codexThreadId,
-    prompt: buildRunPrompt(input),
+  await startAppServerTurnKeepAlive({
+    sandbox: runtime.sandbox,
+    runId: input.runId,
   })
 
-  if (bridgeResult.kind !== 'start') {
-    throw new Error('app-server bridge did not start a turn')
+  let bridgeResult: AppServerBridgeResult
+  try {
+    bridgeResult = await runAppServerBridge(runtime.sandbox, {
+      mode: 'start',
+      url: `ws://127.0.0.1:${appServerPort}`,
+      cwd: '/workspace/gavel-agent',
+      threadId: input.codexThreadId,
+      prompt: buildRunPrompt(input),
+    })
+
+    if (bridgeResult.kind !== 'start') {
+      throw new Error('app-server bridge did not start a turn')
+    }
+  } catch (err) {
+    await stopAppServerTurnKeepAlive({
+      sandbox: runtime.sandbox,
+      runId: input.runId,
+    })
+    throw err
   }
 
   await ctx.runMutation(markAppServerTurnStartedRef, {
@@ -846,6 +1307,10 @@ async function startAppServerTurn(ctx: ActionCtx, input: AppServerRunInput) {
 
 async function steerAppServerTurn(ctx: ActionCtx, input: AppServerSteerInput) {
   const runtime = await ensureAppServerSandbox(input)
+  await startAppServerTurnKeepAlive({
+    sandbox: runtime.sandbox,
+    runId: input.runId,
+  })
   const bridgeResult = await runAppServerBridge(runtime.sandbox, {
     mode: 'steer',
     url: `ws://127.0.0.1:${appServerPort}`,
@@ -888,7 +1353,8 @@ async function startRemoteCodexRun(input: StartRemoteCodexRunInput) {
   }
 
   const region = process.env.BL_REGION
-  const sandboxName = sandboxNameForPhone(input.phoneNumber)
+  const sandboxName =
+    input.sandboxName ?? sandboxNameForPhone(input.phoneNumber)
   const runSlug = createHash('sha256')
     .update(input.runId)
     .digest('hex')
@@ -905,6 +1371,8 @@ async function startRemoteCodexRun(input: StartRemoteCodexRunInput) {
   })
 
   await sandbox.wait({ maxWait: 120_000, interval: 2_000 })
+
+  await installGavelAgentInstructions(sandbox)
 
   const promptPath = `/workspace/gavel-runs/${runSlug}/prompt.md`
   await sandbox.fs.write(promptPath, buildRunPrompt(input))
@@ -973,7 +1441,8 @@ async function startQueuedRemoteCodexRun(
   ctx: ActionCtx,
   input: StartableQueuedRun,
 ) {
-  const sandboxName = sandboxNameForPhone(input.phoneNumber)
+  const sandboxName =
+    input.sandboxName ?? sandboxNameForPhone(input.phoneNumber)
   const image = process.env.BLAXEL_CODEX_BROWSERCODE_IMAGE
   if (!image) {
     await ctx.runMutation(markRunFailedRef, {
@@ -1026,14 +1495,62 @@ async function startQueuedRemoteCodexRunSafely(
 ) {
   try {
     await startQueuedRemoteCodexRun(ctx, input)
+    await scheduleReservePoolRefill(ctx)
   } catch (err) {
     await ctx.runMutation(markRunFailedRef, {
       runId: input.runId,
-      sandboxName: sandboxNameForPhone(input.phoneNumber),
+      sandboxName: input.sandboxName ?? sandboxNameForPhone(input.phoneNumber),
       error: err instanceof Error ? err.message : String(err),
     })
   }
 }
+
+export const maintainSandboxReservePool = internalAction({
+  args: {},
+  handler: async (ctx) => {
+    const target = reservePoolTarget()
+    if (target === 0) return null
+
+    const image = process.env.BLAXEL_CODEX_BROWSERCODE_IMAGE
+    if (!image) return null
+
+    const region = process.env.BL_REGION
+    const sandboxNames = await ctx.runMutation(planSandboxReserveCreationRef, {
+      target,
+      image,
+      region,
+      candidateSandboxNames: Array.from(
+        { length: target },
+        () => `${reserveSandboxNamePrefix}-${randomUUID()}`,
+      ),
+    })
+
+    for (const sandboxName of sandboxNames) {
+      try {
+        const sandbox = await SandboxInstance.createIfNotExists({
+          name: sandboxName,
+          image,
+          memory: 8192,
+          region,
+          labels: {
+            app: 'gavel',
+            runtime: 'codex-reserve',
+            pool: 'reserve',
+          },
+        })
+        await sandbox.wait({ maxWait: 120_000, interval: 2_000 })
+        await ctx.runMutation(markReserveSandboxReadyRef, { sandboxName })
+      } catch (err) {
+        await ctx.runMutation(markReserveSandboxErrorRef, {
+          sandboxName,
+          error: err instanceof Error ? err.message : String(err),
+        })
+      }
+    }
+
+    return null
+  },
+})
 
 function buildRunPrompt(input: StartRemoteCodexRunInput) {
   const history = input.conversationHistory
@@ -1043,22 +1560,152 @@ function buildRunPrompt(input: StartRemoteCodexRunInput) {
     })
     .join('\n')
 
-  return `You are Gavel, an agent that helps the user sell stuff hands-off.
+  return `Runtime context for this Gavel phone conversation:
 
-The user is messaging from ${input.phoneNumber}.
-This is one continuing conversation for this phone number. Keep using the same context, listing state, browser profile, and marketplace work from earlier messages.
-
-Use the BrowserCode browser_execute MCP tool when browser work is needed.
-Use Browser Use cloud with the provided BROWSER_USE_PROFILE_ID.
-Do not send marketplace messages or accept offers without final user confirmation.
+- User phone number: ${input.phoneNumber}
+- Conversation continuity: this is one continuing conversation for this phone number. Use the same listing state, browser profile, and marketplace context from earlier turns.
+- Browser Use: BROWSER_USE_PROFILE_ID is configured in the runtime environment.
+- Browser live preview URL: not provided for this turn.
+- Attachments: any available image/file URLs are included inline in the conversation history or latest user message as Convex file URLs with metadata.
+- Outbound media: if you need to send media, follow the AGENTS.md media marker format in your final answer.
 
 Conversation history:
 ${history || '- No previous messages.'}
 
-Latest user message:
+Latest message or notification:
 ${input.prompt}
 `
 }
+
+export const handleExternalAgentNotification = internalAction({
+  args: {
+    rawBody: v.string(),
+    authorization: v.union(v.string(), v.null()),
+    secret: v.union(v.string(), v.null()),
+    idempotencyKey: v.union(v.string(), v.null()),
+  },
+  handler: async (ctx, args): Promise<WebhookActionResult> => {
+    const providedSecret = args.secret ?? bearerToken(args.authorization)
+    if (!verifyExternalAgentSecret(providedSecret)) {
+      return json(401, { ok: false, error: 'invalid secret' })
+    }
+
+    let payload: ExternalAgentNotificationPayload
+    try {
+      payload = JSON.parse(args.rawBody) as ExternalAgentNotificationPayload
+    } catch {
+      return json(400, { ok: false, error: 'invalid json' })
+    }
+
+    const phoneNumber = normalizeAgentPhoneNumber(
+      payload.phoneNumber ?? payload.recipientPhoneNumber,
+    )
+    if (!phoneNumber) {
+      return json(400, {
+        ok: false,
+        error: 'phoneNumber must be in E.164 format',
+      })
+    }
+
+    const message = payload.message?.trim()
+    if (!message) {
+      return json(400, { ok: false, error: 'message is required' })
+    }
+
+    const notificationId =
+      payload.notificationId ??
+      payload.idempotencyKey ??
+      args.idempotencyKey ??
+      `external:${randomUUID()}`
+
+    const enqueued = await ctx.runMutation(
+      enqueueExternalNotificationForAppServerRef,
+      {
+        notificationId,
+        phoneNumber,
+        message,
+        source: payload.source ?? 'phone agent',
+        channel: parseOptionalChannel(payload.channel),
+        conversationId: payload.conversationId,
+      },
+    )
+
+    if (enqueued.kind === 'duplicate') {
+      return json(200, {
+        ok: true,
+        duplicate: true,
+        runId: enqueued.runId,
+        status: enqueued.status,
+      })
+    }
+
+    if (enqueued.kind === 'needs_profile') {
+      return json(200, {
+        ok: true,
+        status: 'needs_profile',
+        runId: enqueued.runId,
+      })
+    }
+
+    await scheduleReservePoolRefill(ctx)
+
+    try {
+      if (enqueued.kind === 'steer') {
+        const steered = await steerAppServerTurn(ctx, {
+          runId: enqueued.runId,
+          phoneNumber,
+          sandboxName: enqueued.sandboxName,
+          prompt: enqueued.prompt,
+          browserUseProfileId: enqueued.browserUseProfileId,
+          codexThreadId: enqueued.codexThreadId,
+          codexTurnId: enqueued.codexTurnId,
+          conversationHistory: enqueued.conversationHistory,
+        })
+
+        return json(200, {
+          ok: true,
+          status: 'steered',
+          runId: enqueued.runId,
+          sandboxName: steered.sandboxName,
+          threadId: steered.threadId,
+          turnId: steered.turnId,
+        })
+      }
+
+      const started = await startAppServerTurn(ctx, {
+        runId: enqueued.runId,
+        phoneNumber,
+        sandboxName: enqueued.sandboxName,
+        prompt: enqueued.prompt,
+        browserUseProfileId: enqueued.browserUseProfileId,
+        codexThreadId: enqueued.codexThreadId,
+        conversationHistory: enqueued.conversationHistory,
+      })
+
+      return json(200, {
+        ok: true,
+        status: 'running',
+        runtime: 'app_server',
+        runId: enqueued.runId,
+        sandboxName: started.sandboxName,
+        processName: started.processName,
+        threadId: started.threadId,
+        turnId: started.turnId,
+      })
+    } catch (err) {
+      await ctx.runMutation(markRunFailedRef, {
+        runId: enqueued.runId,
+        sandboxName: enqueued.sandboxName ?? sandboxNameForPhone(phoneNumber),
+        error: err instanceof Error ? err.message : String(err),
+      })
+
+      return json(500, {
+        ok: false,
+        error: 'failed to process external notification',
+      })
+    }
+  },
+})
 
 export const handleAgentPhoneWebhook = internalAction({
   args: {
@@ -1099,6 +1746,18 @@ export const handleAgentPhoneWebhook = internalAction({
       return json(400, { ok: false, error: 'invalid sender phone number' })
     }
 
+    const conversationId = payload.data.conversationId ?? undefined
+    let attachments: StoredWebhookAttachment[]
+    try {
+      attachments = await storeWebhookAttachments(ctx, payload)
+    } catch (err) {
+      return json(502, {
+        ok: false,
+        error: err instanceof Error ? err.message : 'failed to store media',
+      })
+    }
+    const prompt = payload.data.message ?? ''
+
     if (process.env.CODEX_RUNTIME !== 'exec') {
       const enqueued = await ctx.runMutation(
         enqueueAgentPhoneMessageForAppServerRef,
@@ -1106,8 +1765,9 @@ export const handleAgentPhoneWebhook = internalAction({
           webhookId: args.webhookId,
           phoneNumber,
           channel: payload.channel,
-          prompt: payload.data.message,
-          conversationId: payload.data.conversationId,
+          prompt,
+          conversationId,
+          attachments,
         },
       )
 
@@ -1128,11 +1788,14 @@ export const handleAgentPhoneWebhook = internalAction({
         })
       }
 
+      await scheduleReservePoolRefill(ctx)
+
       try {
         if (enqueued.kind === 'steer') {
           const steered = await steerAppServerTurn(ctx, {
             runId: enqueued.runId,
             phoneNumber,
+            sandboxName: enqueued.sandboxName,
             prompt: enqueued.prompt,
             browserUseProfileId: enqueued.browserUseProfileId,
             codexThreadId: enqueued.codexThreadId,
@@ -1153,6 +1816,7 @@ export const handleAgentPhoneWebhook = internalAction({
         const started = await startAppServerTurn(ctx, {
           runId: enqueued.runId,
           phoneNumber,
+          sandboxName: enqueued.sandboxName,
           prompt: enqueued.prompt,
           browserUseProfileId: enqueued.browserUseProfileId,
           codexThreadId: enqueued.codexThreadId,
@@ -1172,7 +1836,7 @@ export const handleAgentPhoneWebhook = internalAction({
       } catch (err) {
         await ctx.runMutation(markRunFailedRef, {
           runId: enqueued.runId,
-          sandboxName: sandboxNameForPhone(phoneNumber),
+          sandboxName: enqueued.sandboxName ?? sandboxNameForPhone(phoneNumber),
           error: err instanceof Error ? err.message : String(err),
         })
 
@@ -1187,8 +1851,9 @@ export const handleAgentPhoneWebhook = internalAction({
       webhookId: args.webhookId,
       phoneNumber,
       channel: payload.channel,
-      prompt: payload.data.message,
-      conversationId: payload.data.conversationId,
+      prompt,
+      conversationId,
+      attachments,
     })
 
     if (enqueued.kind === 'duplicate') {
@@ -1207,7 +1872,9 @@ export const handleAgentPhoneWebhook = internalAction({
       })
     }
 
-    const sandboxName = sandboxNameForPhone(phoneNumber)
+    await scheduleReservePoolRefill(ctx)
+
+    const sandboxName = enqueued.sandboxName ?? sandboxNameForPhone(phoneNumber)
     const browserUseProfileId = enqueued.browserUseProfileId
     if (!browserUseProfileId) {
       await ctx.runMutation(markRunFailedRef, {
@@ -1226,6 +1893,7 @@ export const handleAgentPhoneWebhook = internalAction({
       const remoteRun = await startQueuedRemoteCodexRun(ctx, {
         runId: enqueued.runId,
         phoneNumber,
+        sandboxName,
         prompt: enqueued.prompt,
         browserUseProfileId,
         codexThreadId: enqueued.codexThreadId,
@@ -1366,11 +2034,83 @@ export const monitorAppServerTurn = internalAction({
         bridgeResult.turnStatus === 'interrupted'
 
       if (isComplete) {
-        await ctx.runMutation(markAppServerTurnCompletedRef, {
+        const parsedReply = parseOutboundReply(bridgeResult.agentReplyText)
+        const outboundReply = await ctx.runMutation(
+          markAppServerTurnCompletedRef,
+          {
+            runId: args.runId,
+            processStatus:
+              bridgeResult.threadStatusType ?? bridgeResult.turnStatus,
+            agentReplyText: parsedReply.body,
+            agentReplyItemId: bridgeResult.agentReplyItemId,
+            agentReplyMediaUrls: parsedReply.mediaUrls,
+          },
+        )
+
+        await stopAppServerTurnKeepAlive({
+          sandbox,
           runId: args.runId,
-          processStatus:
-            bridgeResult.threadStatusType ?? bridgeResult.turnStatus,
         })
+
+        if (outboundReply) {
+          if (!outboundReply.phoneNumber) {
+            await ctx.runMutation(markAgentPhoneReplyFailedRef, {
+              runId: outboundReply.runId,
+              error: 'Phone number is missing for outbound reply',
+            })
+            return null
+          }
+
+          try {
+            const messageIds: string[] = []
+            const mediaUrls =
+              outboundReply.channel === 'imessage'
+                ? (outboundReply.mediaUrls ?? [])
+                : []
+            const fallbackMediaUrls =
+              outboundReply.channel === 'imessage'
+                ? []
+                : (outboundReply.mediaUrls ?? [])
+            const body = [outboundReply.replyText, ...fallbackMediaUrls]
+              .filter(Boolean)
+              .join('\n')
+              .trim()
+
+            if (body || mediaUrls.length === 0) {
+              const sent = await sendAgentPhoneReply({
+                toNumber: outboundReply.phoneNumber,
+                body,
+                mediaUrl: mediaUrls[0],
+              })
+              if (sent.agentPhoneMessageId) {
+                messageIds.push(sent.agentPhoneMessageId)
+              }
+            }
+
+            for (const mediaUrl of mediaUrls.slice(body ? 1 : 0)) {
+              const sent = await sendAgentPhoneReply({
+                toNumber: outboundReply.phoneNumber,
+                body: '',
+                mediaUrl,
+              })
+              if (sent.agentPhoneMessageId) {
+                messageIds.push(sent.agentPhoneMessageId)
+              }
+            }
+
+            await ctx.runMutation(markAgentPhoneReplySentRef, {
+              runId: outboundReply.runId,
+              agentPhoneMessageId: messageIds[0],
+              agentPhoneMessageIds: messageIds,
+            })
+          } catch (err) {
+            await ctx.runMutation(markAgentPhoneReplyFailedRef, {
+              runId: outboundReply.runId,
+              error: err instanceof Error ? err.message : String(err),
+            })
+          }
+        }
+
         return null
       }
 
@@ -1394,6 +2134,15 @@ export const monitorAppServerTurn = internalAction({
         sandboxName: args.sandboxName,
         error: err instanceof Error ? err.message : String(err),
       })
+      try {
+        const sandbox = await SandboxInstance.get(args.sandboxName)
+        await stopAppServerTurnKeepAlive({
+          sandbox,
+          runId: args.runId,
+        })
+      } catch {
+        // The sandbox may already be unavailable after repeated monitor errors.
+      }
       return null
     }
   },

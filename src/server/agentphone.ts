@@ -15,9 +15,23 @@ export type AgentPhoneWebhookPayload = {
     to?: string
     message?: string
     mediaUrl?: string | null
+    mediaUrls?: string[]
+    attachments?: AgentPhoneMediaItem[]
+    media?: AgentPhoneMediaItem[]
     direction?: string
     receivedAt?: string
   }
+}
+
+export type AgentPhoneMediaItem = {
+  url?: string | null
+  mediaUrl?: string | null
+  downloadUrl?: string | null
+  contentType?: string | null
+  mimeType?: string | null
+  filename?: string | null
+  fileName?: string | null
+  name?: string | null
 }
 
 export function verifyAgentPhoneWebhook(input: {
@@ -64,15 +78,22 @@ export function isSupportedMessageWebhook(
   channel: AgentPhoneMessageChannel
   data: NonNullable<AgentPhoneWebhookPayload['data']> & {
     from: string
-    message: string
+    message?: string
   }
 } {
+  const data = payload.data
+  const hasMedia =
+    typeof data?.mediaUrl === 'string' ||
+    (data?.mediaUrls?.length ?? 0) > 0 ||
+    (data?.attachments?.length ?? 0) > 0 ||
+    (data?.media?.length ?? 0) > 0
+
   return (
     payload.event === 'agent.message' &&
     ALLOWED_MESSAGE_CHANNELS.includes(
       payload.channel as AgentPhoneMessageChannel,
     ) &&
     typeof payload.data?.from === 'string' &&
-    typeof payload.data.message === 'string'
+    (typeof payload.data.message === 'string' || hasMedia)
   )
 }

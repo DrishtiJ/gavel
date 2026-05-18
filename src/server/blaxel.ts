@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto'
 import { SandboxInstance } from '@blaxel/core'
+import { gavelAgentInstructions } from '../../convex/gavelAgentInstructions'
 
 export type StartRemoteCodexRunInput = {
   runId: string
@@ -8,7 +9,7 @@ export type StartRemoteCodexRunInput = {
   browserUseProfileId: string
   codexThreadId?: string
   conversationHistory?: Array<{
-    role: 'user' | 'agent' | 'system'
+    role: 'user' | 'agent' | 'system' | 'external'
     body: string
     createdAt: number
   }>
@@ -23,6 +24,7 @@ export type RemoteCodexRun = {
 }
 
 const shellQuote = (value: string) => `'${value.replaceAll("'", "'\\''")}'`
+const gavelAgentInstructionsPath = '/workspace/gavel-agent/AGENTS.md'
 
 export function sandboxNameForPhone(phoneNumber: string) {
   const digest = createHash('sha256').update(phoneNumber).digest('hex')
@@ -65,6 +67,7 @@ export async function startRemoteCodexRun(
   })
 
   await sandbox.wait({ maxWait: 120_000, interval: 2_000 })
+  await sandbox.fs.write(gavelAgentInstructionsPath, gavelAgentInstructions)
 
   const promptPath = `/workspace/gavel-runs/${runSlug}/prompt.md`
   await sandbox.fs.write(promptPath, buildRunPrompt(input))
@@ -137,19 +140,19 @@ function buildRunPrompt(input: StartRemoteCodexRunInput) {
     })
     .join('\n')
 
-  return `You are Gavel, an agent that helps the user sell stuff hands-off.
+  return `Runtime context for this Gavel phone conversation:
 
-The user is messaging from ${input.phoneNumber}.
-This is one continuing conversation for this phone number. Keep using the same context, listing state, browser profile, and marketplace work from earlier messages.
-
-Use the BrowserCode browser_execute MCP tool when browser work is needed.
-Use Browser Use cloud with the provided BROWSER_USE_PROFILE_ID.
-Do not send marketplace messages or accept offers without final user confirmation.
+- User phone number: ${input.phoneNumber}
+- Conversation continuity: this is one continuing conversation for this phone number. Use the same listing state, browser profile, and marketplace context from earlier turns.
+- Browser Use: BROWSER_USE_PROFILE_ID is configured in the runtime environment.
+- Browser live preview URL: not provided for this turn.
+- Attachments: any available image/file URLs are included inline in the conversation history or latest user message as Convex file URLs with metadata.
+- Outbound media: if you need to send media, follow the AGENTS.md media marker format in your final answer.
 
 Conversation history:
 ${history || '- No previous messages.'}
 
-Latest user message:
+Latest message or notification:
 ${input.prompt}
 `
 }

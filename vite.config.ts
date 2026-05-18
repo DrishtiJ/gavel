@@ -4,6 +4,10 @@ import tailwindcss from '@tailwindcss/vite'
 import viteReact from '@vitejs/plugin-react'
 import { nitro } from 'nitro/vite'
 
+const isTest = process.argv.some(
+  (arg) => arg.includes('vitest') || arg.includes('test'),
+)
+
 export default defineConfig({
   staged: {
     '*': 'vp check --fix',
@@ -49,5 +53,9 @@ export default defineConfig({
       },
     ],
   },
-  plugins: [tailwindcss(), tanstackStart(), nitro(), viteReact()],
+  plugins: [
+    tailwindcss(),
+    ...(isTest ? [] : [tanstackStart(), nitro()]),
+    viteReact(),
+  ],
 })

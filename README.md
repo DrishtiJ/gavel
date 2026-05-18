@@ -78,7 +78,9 @@ AgentPhone webhook
 ```
 
 For the MVP, the sender phone number is the user identity. Each phone user gets
-one reusable Blaxel sandbox and one Browser Use profile. Convex stores durable
+one reusable Blaxel sandbox and one Browser Use profile. Convex also maintains a
+small reserve pool of ready Blaxel sandboxes so first-time users can claim a warm
+box immediately; the target reserve size defaults to 2. Convex stores durable
 run state, active-run locking, progress events, and completion/failure status.
 
 ## Operations
@@ -111,6 +113,8 @@ npx convex deploy --yes
 
 - One active Codex run is allowed per phone user sandbox.
 - Additional messages queue behind the active run.
+- `convex/crons.ts` keeps the Blaxel reserve sandbox pool at
+  `BLAXEL_SANDBOX_RESERVE_TARGET`, defaulting to 2.
 - Queued follow-up runs do not auto-drain yet after completion.
 - Human approval still needs explicit product state before marketplace messages,
   offer acceptance, or logistics commitments.

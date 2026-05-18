@@ -11,6 +11,7 @@ export default defineSchema({
     phoneNumber: v.string(),
     activeRunId: v.optional(v.id('agentRuns')),
     codexThreadId: v.optional(v.string()),
+    resetBefore: v.optional(v.number()),
     createdAt: v.number(),
     updatedAt: v.number(),
   }).index('by_phoneNumber', ['phoneNumber']),
@@ -23,10 +24,11 @@ export default defineSchema({
     .index('by_phoneUserId', ['phoneUserId'])
     .index('by_browserUseProfileId', ['browserUseProfileId']),
   agentSandboxes: defineTable({
-    phoneUserId: v.id('phoneUsers'),
+    phoneUserId: v.optional(v.id('phoneUsers')),
     sandboxName: v.string(),
     image: v.string(),
     region: v.optional(v.string()),
+    poolRole: v.optional(v.union(v.literal('reserve'), v.literal('assigned'))),
     status: v.union(
       v.literal('creating'),
       v.literal('ready'),
@@ -35,10 +37,12 @@ export default defineSchema({
     lastError: v.optional(v.string()),
     lastStartedAt: v.optional(v.number()),
     lastSeenAt: v.optional(v.number()),
+    assignedAt: v.optional(v.number()),
     createdAt: v.number(),
     updatedAt: v.number(),
   })
     .index('by_phoneUserId', ['phoneUserId'])
+    .index('by_poolRole_and_status', ['poolRole', 'status'])
     .index('by_sandboxName', ['sandboxName']),
   agentRuns: defineTable({
     phoneUserId: v.id('phoneUsers'),
@@ -63,6 +67,16 @@ export default defineSchema({
     processName: v.optional(v.string()),
     processStatus: v.optional(v.string()),
     processLogOffset: v.optional(v.number()),
+    agentReplyText: v.optional(v.string()),
+    agentReplyItemId: v.optional(v.string()),
+    agentReplyMediaUrls: v.optional(v.array(v.string())),
+    replyDeliveryStatus: v.optional(
+      v.union(v.literal('pending'), v.literal('sent'), v.literal('failed')),
+    ),
+    replyDeliveryError: v.optional(v.string()),
+    replySentAt: v.optional(v.number()),
+    agentPhoneMessageId: v.optional(v.string()),
+    agentPhoneMessageIds: v.optional(v.array(v.string())),
     completedAt: v.optional(v.number()),
     error: v.optional(v.string()),
     createdAt: v.number(),
@@ -85,14 +99,34 @@ export default defineSchema({
       v.literal('user'),
       v.literal('agent'),
       v.literal('system'),
+      v.literal('external'),
     ),
+    externalSource: v.optional(v.string()),
     channel: v.optional(
       v.union(v.literal('sms'), v.literal('mms'), v.literal('imessage')),
     ),
     body: v.string(),
+    attachmentCount: v.optional(v.number()),
     createdAt: v.number(),
   })
     .index('by_phoneUserId_createdAt', ['phoneUserId', 'createdAt'])
+    .index('by_inboundWebhookId', ['inboundWebhookId'])
+    .index('by_runId', ['runId']),
+  conversationAttachments: defineTable({
+    phoneUserId: v.id('phoneUsers'),
+    conversationMessageId: v.id('conversationMessages'),
+    runId: v.optional(v.id('agentRuns')),
+    inboundWebhookId: v.string(),
+    storageId: v.id('_storage'),
+    sourceUrl: v.optional(v.string()),
+    filename: v.optional(v.string()),
+    contentType: v.optional(v.string()),
+    size: v.optional(v.number()),
+    sha256: v.optional(v.string()),
+    createdAt: v.number(),
+  })
+    .index('by_phoneUserId', ['phoneUserId'])
+    .index('by_conversationMessageId', ['conversationMessageId'])
     .index('by_inboundWebhookId', ['inboundWebhookId'])
     .index('by_runId', ['runId']),
   listings: defineTable({
