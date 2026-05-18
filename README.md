@@ -97,16 +97,23 @@ Start a local Blaxel/Codex smoke run:
 scripts/start-blaxel-codex-smoke.ts +15551234567 browser-use-profile-id
 ```
 
-Push the Blaxel sandbox image:
+Deploy the app runtime. This builds the web app, pushes the Blaxel sandbox
+image, then deploys Convex:
 
 ```bash
-blaxel/codex-browsercode/push.sh
+pnpm run deploy
 ```
 
-Deploy Convex changes:
+Push only the Blaxel sandbox image:
 
 ```bash
-npx convex deploy --yes
+pnpm run deploy:blaxel
+```
+
+Deploy only Convex changes:
+
+```bash
+pnpm run deploy:convex
 ```
 
 ## Notes
