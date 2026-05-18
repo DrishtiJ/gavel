@@ -35,6 +35,7 @@ Required server environment:
 
 ```bash
 AGENTPHONE_WEBHOOK_SECRET=
+AGENT_NOTIFY_SECRET=
 BL_WORKSPACE=
 BL_API_KEY=
 BLAXEL_CODEX_BROWSERCODE_IMAGE=
@@ -65,6 +66,18 @@ AgentPhone should send inbound messages to the Convex HTTP action:
 ```text
 POST https://<convex-deployment>.convex.site/api/agentphone/webhook
 ```
+
+External systems, such as a buyer-facing phone agent, can notify the seller's
+ongoing Codex thread through:
+
+```text
+POST https://<convex-deployment>.convex.site/api/agent/notify
+Authorization: Bearer <AGENT_NOTIFY_SECRET>
+```
+
+Use the seller's E.164 phone number as `phoneNumber`, not the Gavel/AgentPhone
+number. Provide a stable `notificationId` or `Idempotency-Key` header for
+deduplication.
 
 Runtime flow:
 
