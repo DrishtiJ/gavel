@@ -116,13 +116,6 @@ Deploy only Convex changes:
 vpr deploy:convex
 ```
 
-Pushes to `main` also run `.github/workflows/deploy.yml`, which runs the same
-`vpr deploy` flow after `vp check` and `vp test`. The workflow needs these
-repository secrets:
-
-- `CONVEX_DEPLOY_KEY`
-- `BL_CLIENT_CREDENTIALS` or `BL_API_KEY`
-
 ## Notes
 
 - One active Codex run is allowed per phone user sandbox.
