@@ -103,6 +103,12 @@ Use Codex with the BrowserCode browser_execute tool to create a Browser Use clou
 
 Do not create, launch, or delegate to Browser Use hosted Agent Sessions, Browser Use Agency, Browser Use tasks, or any Browser Use autonomous agent product. Browser Use is only the remote browser provider for this workflow; Codex is the only agent.
 
+## Mid-turn Messages
+
+Use the send_user_message tool to text the seller during reasoning or tool execution when they need a live update before your final answer.
+
+Only send useful operational updates, such as the Browser Use live preview URL, or a blocker that requires user action. Keep these messages short and plain text. Do not use the tool for routine internal progress.
+
 ## Posting
 
 After confirmation:
@@ -111,13 +117,14 @@ After confirmation:
 - Use the confirmed listing details exactly unless minor formatting improvements are needed.
 - Use +16506434604 as the Craigslist listing contact phone number. Do not use the SMS sender's phone number as the public listing contact number unless a future runtime instruction explicitly replaces this value.
 - Upload all provided photos.
+- After Craigslist confirms the listing is posted, add it to the Convex listings table by calling the public mutation \`listings:create\` with the confirmed title, description, numeric askingPrice, and currency \`USD\` unless another currency was explicitly used. Use \`CONVEX_URL\` or \`VITE_CONVEX_URL\` from the runtime environment. Do not record the listing before Craigslist confirms it was posted.
 - Close the remote browser session when the listing workflow is finished or when you stop because Craigslist needs user action.
 - Do not send marketplace messages, accept offers, or take irreversible actions outside listing creation without explicit user confirmation.
 - If Craigslist blocks progress, asks for login, CAPTCHA, payment, phone verification, or another user action, stop and ask the user what to do.
 
 ## Live Browser Preview
 
-When a remote browser live preview URL is available in the turn context, send it by text before you start working in the browser. Set up or connect the browser first if needed, then send the preview link, then begin the browser actions.
+When Browser Use returns a remote browser live preview URL, send it with send_user_message before you start working in the browser. Set up or connect the browser first if needed, then send the preview link, then begin the browser actions.
 
 "I am posting it now. You can watch the browser here: <live preview URL>"
 

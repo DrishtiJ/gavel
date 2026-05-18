@@ -36,6 +36,76 @@ const server = new McpServer({
   version: '0.1.0',
 })
 
+async function sendAgentPhoneMessage(input: {
+  body: string
+  mediaUrl?: string
+}) {
+  const apiKey = process.env.AGENTPHONE_API_KEY
+  const agentId = process.env.AGENTPHONE_AGENT_ID
+  const toNumber = process.env.GAVEL_USER_PHONE_NUMBER
+  if (!apiKey) throw new Error('AGENTPHONE_API_KEY is not set')
+  if (!agentId) throw new Error('AGENTPHONE_AGENT_ID is not set')
+  if (!toNumber) throw new Error('GAVEL_USER_PHONE_NUMBER is not set')
+
+  const body = input.body.trim()
+  const mediaUrl = input.mediaUrl?.trim()
+  if (!body && !mediaUrl) {
+    throw new Error('message body or mediaUrl is required')
+  }
+
+  const requestBody: {
+    agent_id: string
+    to_number: string
+    body: string
+    media_url?: string
+    number_id?: string
+  } = {
+    agent_id: agentId,
+    to_number: toNumber,
+    body,
+  }
+  if (mediaUrl) requestBody.media_url = mediaUrl
+  if (process.env.AGENTPHONE_NUMBER_ID) {
+    requestBody.number_id = process.env.AGENTPHONE_NUMBER_ID
+  }
+
+  const response = await fetch('https://api.agentphone.ai/v1/messages', {
+    method: 'POST',
+    headers: {
+      authorization: `Bearer ${apiKey}`,
+      'content-type': 'application/json',
+    },
+    body: JSON.stringify(requestBody),
+  })
+  const responseText = await response.text()
+  let responseBody: unknown = null
+  try {
+    responseBody = responseText ? JSON.parse(responseText) : null
+  } catch {
+    responseBody = responseText
+  }
+
+  if (!response.ok) {
+    throw new Error(
+      `AgentPhone send failed with ${response.status}: ${responseText}`,
+    )
+  }
+
+  const data =
+    responseBody && typeof responseBody === 'object' && 'data' in responseBody
+      ? (responseBody as { data?: unknown }).data
+      : responseBody
+  const messageId =
+    data && typeof data === 'object' && 'id' in data
+      ? (data as { id?: unknown }).id
+      : null
+
+  return {
+    ok: true,
+    agentPhoneMessageId: typeof messageId === 'string' ? messageId : undefined,
+  }
+}
+
 const formatBrowserCodeOutput = (result: {
   output: string
   result: string
@@ -183,6 +253,50 @@ server.registerTool(
               null,
               2,
             ),
+          },
+        ],
+      }
+    }
+  },
+)
+
+server.registerTool(
+  'send_user_message',
+  {
+    title: 'send_user_message',
+    description:
+      'Send an SMS/iMessage update to the current Gavel user during a turn. Use this for live progress updates, including the Browser Use live preview URL once available. The recipient phone number is fixed by GAVEL_USER_PHONE_NUMBER in the runtime; do not include phone numbers in the input.',
+    inputSchema: {
+      body: z
+        .string()
+        .describe(
+          'Plain text message body to send to the current user. Keep it concise and SMS-friendly.',
+        ),
+      mediaUrl: z
+        .string()
+        .url()
+        .optional()
+        .describe('Optional media URL to attach to the outbound message.'),
+    },
+  },
+  async (args) => {
+    try {
+      const result = await sendAgentPhoneMessage(args)
+      return {
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify(result, null, 2),
+          },
+        ],
+      }
+    } catch (err) {
+      return {
+        isError: true,
+        content: [
+          {
+            type: 'text',
+            text: err instanceof Error ? err.message : String(err),
           },
         ],
       }

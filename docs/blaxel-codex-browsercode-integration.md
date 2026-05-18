@@ -44,8 +44,29 @@ Create a custom Blaxel sandbox image, for example
 [mcp_servers.browsercode]
 command = "/opt/gavel/plugins/browsercode/mcp/browsercode/run-mcp.sh"
 args = []
-env_vars = ["BROWSER_USE_API_KEY", "BROWSER_USE_PROFILE_ID", "BU_CDP_WS", "BU_CDP_URL"]
+env_vars = [
+  "BROWSER_USE_API_KEY",
+  "BROWSER_USE_PROFILE_ID",
+  "BU_CDP_WS",
+  "BU_CDP_URL",
+  "AGENTPHONE_API_KEY",
+  "AGENTPHONE_AGENT_ID",
+  "AGENTPHONE_NUMBER_ID",
+  "GAVEL_USER_PHONE_NUMBER",
+  "CONVEX_URL",
+  "VITE_CONVEX_URL",
+]
 ```
+
+The same MCP server also exposes `send_user_message`, which sends a concise
+AgentPhone update to the current seller while Codex is still working. Pass
+`AGENTPHONE_API_KEY`, `AGENTPHONE_AGENT_ID`, optional `AGENTPHONE_NUMBER_ID`,
+and `GAVEL_USER_PHONE_NUMBER` into the Codex process and expose them through
+the MCP server env allowlist.
+
+Pass `CONVEX_URL` or `VITE_CONVEX_URL` into the Codex process so the agent can
+record successfully posted Craigslist listings through the public
+`listings:create` mutation.
 
 The Dockerfile must include Blaxel's `sandbox-api` binary and the entrypoint
 must start it. BrowserCode should remain vendored from this repo rather than

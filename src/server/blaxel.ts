@@ -78,6 +78,22 @@ export async function startRemoteCodexRun(
   const processEnv: Record<string, string> = {
     BROWSER_USE_API_KEY: process.env.BROWSER_USE_API_KEY,
     BROWSER_USE_PROFILE_ID: input.browserUseProfileId,
+    GAVEL_USER_PHONE_NUMBER: input.phoneNumber,
+  }
+  if (process.env.AGENTPHONE_API_KEY) {
+    processEnv.AGENTPHONE_API_KEY = process.env.AGENTPHONE_API_KEY
+  }
+  if (process.env.AGENTPHONE_AGENT_ID) {
+    processEnv.AGENTPHONE_AGENT_ID = process.env.AGENTPHONE_AGENT_ID
+  }
+  if (process.env.AGENTPHONE_NUMBER_ID) {
+    processEnv.AGENTPHONE_NUMBER_ID = process.env.AGENTPHONE_NUMBER_ID
+  }
+  if (process.env.CONVEX_URL) {
+    processEnv.CONVEX_URL = process.env.CONVEX_URL
+  }
+  if (process.env.VITE_CONVEX_URL) {
+    processEnv.VITE_CONVEX_URL = process.env.VITE_CONVEX_URL
   }
   if (process.env.OPENAI_API_KEY) {
     processEnv.OPENAI_API_KEY = process.env.OPENAI_API_KEY
@@ -157,6 +173,8 @@ function buildRunPrompt(input: StartRemoteCodexRunInput) {
 - Conversation continuity: this is one continuing conversation for this phone number. Use the same listing state, browser profile, and marketplace context from earlier turns.
 - Browser Use remote browser: BROWSER_USE_PROFILE_ID is configured in the runtime environment. Use BrowserCode/browser_execute to create a Browser Use cloud browser and connect over CDP. Do not create or use Browser Use hosted Agent Sessions, Browser Use Agency, Browser Use tasks, or any Browser Use autonomous agent product.
 - Browser live preview URL: not provided for this turn.
+- Outbound progress messages: use the send_user_message tool if you need to text the user before the final answer. When Browser Use returns a liveUrl after creating the remote browser, send it with send_user_message before starting browser actions.
+- Convex listings table: CONVEX_URL may be configured in the runtime environment. After Craigslist confirms the listing is posted, call the public Convex mutation listings:create to record the listing.
 - Attachments: any available image/file URLs are included inline in the conversation history or latest user message as Convex file URLs with metadata.
 - Outbound media: if you need to send media, follow the AGENTS.md media marker format in your final answer.
 
