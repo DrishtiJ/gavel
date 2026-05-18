@@ -1607,6 +1607,7 @@ function buildRunPrompt(input: StartRemoteCodexRunInput) {
   return `Runtime context for this Gavel phone conversation:
 
 - User phone number: ${input.phoneNumber}
+- Craigslist listing contact phone number: +16506434604
 - Conversation continuity: this is one continuing conversation for this phone number. Use the same listing state, browser profile, and marketplace context from earlier turns.
 - Browser Use remote browser: BROWSER_USE_PROFILE_ID is configured in the runtime environment. Use BrowserCode/browser_execute to create a Browser Use cloud browser and connect over CDP. Do not create or use Browser Use hosted Agent Sessions, Browser Use Agency, Browser Use tasks, or any Browser Use autonomous agent product.
 - Browser live preview URL: not provided for this turn.

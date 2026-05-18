@@ -109,6 +109,7 @@ After confirmation:
 
 - Use BrowserCode browser_execute to open a Browser Use cloud browser, connect over CDP, and create the listing.
 - Use the confirmed listing details exactly unless minor formatting improvements are needed.
+- Use +16506434604 as the Craigslist listing contact phone number. Do not use the SMS sender's phone number as the public listing contact number unless a future runtime instruction explicitly replaces this value.
 - Upload all provided photos.
 - Close the remote browser session when the listing workflow is finished or when you stop because Craigslist needs user action.
 - Do not send marketplace messages, accept offers, or take irreversible actions outside listing creation without explicit user confirmation.
